@@ -116,8 +116,8 @@ test.describe('Visio2Drawio E2E Tests', () => {
 
     // 6. Test Format Selector toggle inside main
     const mainSection = page.locator('main');
-    const drawioOption = mainSection.getByText('Draw.io 圖表檔 (.drawio)');
-    const libraryOption = mainSection.getByText('Draw.io 自訂形狀庫 (.xml)');
+    const drawioOption = mainSection.getByText(/\.drawio/i).first();
+    const libraryOption = mainSection.getByText(/\.xml/i).first();
     await expect(drawioOption).toBeVisible();
     await expect(libraryOption).toBeVisible();
 

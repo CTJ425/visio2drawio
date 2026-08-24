@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Sliders, Layers, FileCode } from 'lucide-react';
+import React from 'react';
+import { Layers, Library, Settings2, HelpCircle } from 'lucide-react';
 
 export interface ConvertSettings {
   format: 'drawio' | 'mxlibrary';
@@ -16,154 +16,188 @@ interface FormatSelectorProps {
 }
 
 export function FormatSelector({ settings, onChange, disabled }: FormatSelectorProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+
+  const handleFormatChange = (format: 'drawio' | 'mxlibrary') => {
+    onChange({ ...settings, format });
+  };
 
   return (
-    <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {/* Format Selection Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <label style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-main)' }}>
+          選擇輸出格式與使用方式
+        </label>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+          兩種格式皆可於下方一鍵直接下載
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+        {/* Draw.io Diagram Option */}
         <div
-          onClick={() => !disabled && onChange({ ...settings, format: 'drawio' })}
+          onClick={() => !disabled && handleFormatChange('drawio')}
           style={{
             border: `2px solid ${settings.format === 'drawio' ? 'var(--primary)' : 'var(--border)'}`,
-            backgroundColor: settings.format === 'drawio' ? 'var(--primary-light)' : '#ffffff',
             borderRadius: 'var(--radius-md)',
             padding: '1.25rem',
             cursor: disabled ? 'not-allowed' : 'pointer',
-            transition: 'all 0.15s ease',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '1rem',
+            backgroundColor: settings.format === 'drawio' ? 'var(--primary-light)' : '#ffffff',
+            transition: 'all 0.2s ease',
+            position: 'relative',
           }}
         >
-          <div style={{
-            backgroundColor: settings.format === 'drawio' ? 'var(--primary)' : '#f1f5f9',
-            color: settings.format === 'drawio' ? '#ffffff' : 'var(--text-muted)',
-            padding: '0.65rem',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex'
-          }}>
-            <FileCode size={24} />
-          </div>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+            <Layers size={22} color={settings.format === 'drawio' ? 'var(--primary)' : 'var(--text-muted)'} />
             <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)' }}>
-              Draw.io 圖表檔 (.drawio)
+              .drawio 繪圖畫布檔
             </div>
-            <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-              將所有形狀依網格排版在單一頁面上，下載後可直接開啟編輯。
-            </div>
+            <span style={{
+              fontSize: '0.75rem',
+              padding: '0.15rem 0.45rem',
+              borderRadius: '4px',
+              backgroundColor: '#e0e7ff',
+              color: 'var(--primary)',
+              fontWeight: 600,
+            }}>
+              整頁排版
+            </span>
+          </div>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+            將所有向量形狀整齊排版在單一畫布上。
+          </p>
+          <div style={{
+            marginTop: '0.65rem',
+            padding: '0.4rem 0.6rem',
+            backgroundColor: '#f1f5f9',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            color: '#334155',
+            lineHeight: 1.4,
+          }}>
+            📍 <strong>Draw.io 開啟方式</strong>：使用<strong>「檔案 ➔ 開啟 (Open)」</strong>或直接拖曳至畫布中央。
           </div>
         </div>
 
+        {/* Custom Library Option */}
         <div
-          onClick={() => !disabled && onChange({ ...settings, format: 'mxlibrary' })}
+          onClick={() => !disabled && handleFormatChange('mxlibrary')}
           style={{
-            border: `2px solid ${settings.format === 'mxlibrary' ? 'var(--primary)' : 'var(--border)'}`,
-            backgroundColor: settings.format === 'mxlibrary' ? 'var(--primary-light)' : '#ffffff',
+            border: `2px solid ${settings.format === 'mxlibrary' ? 'var(--success)' : 'var(--border)'}`,
             borderRadius: 'var(--radius-md)',
             padding: '1.25rem',
             cursor: disabled ? 'not-allowed' : 'pointer',
-            transition: 'all 0.15s ease',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '1rem',
+            backgroundColor: settings.format === 'mxlibrary' ? 'var(--success-bg)' : '#ffffff',
+            transition: 'all 0.2s ease',
+            position: 'relative',
           }}
         >
-          <div style={{
-            backgroundColor: settings.format === 'mxlibrary' ? 'var(--primary)' : '#f1f5f9',
-            color: settings.format === 'mxlibrary' ? '#ffffff' : 'var(--text-muted)',
-            padding: '0.65rem',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex'
-          }}>
-            <Layers size={24} />
-          </div>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+            <Library size={22} color={settings.format === 'mxlibrary' ? 'var(--success)' : 'var(--text-muted)'} />
             <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)' }}>
-              Draw.io 自訂形狀庫 (.xml)
+              .xml 左側自訂形狀庫
             </div>
-            <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-              匯入為 Draw.io 側邊欄形狀庫（File → Open Library from Device），便於重複拖拉使用。
-            </div>
+            <span style={{
+              fontSize: '0.75rem',
+              padding: '0.15rem 0.45rem',
+              borderRadius: '4px',
+              backgroundColor: '#dcfce7',
+              color: 'var(--success)',
+              fontWeight: 600,
+            }}>
+              側邊欄專用
+            </span>
+          </div>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+            匯入為 Draw.io 左側工具箱形狀庫，便於隨時點選與重複拖拉使用。
+          </p>
+          <div style={{
+            marginTop: '0.65rem',
+            padding: '0.4rem 0.6rem',
+            backgroundColor: '#f0fdf4',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            color: '#166534',
+            lineHeight: 1.4,
+          }}>
+            📍 <strong>Draw.io 開啟方式</strong>：使用<strong>「檔案 ➔ 開啟形狀庫 (Open Library from) ➔ 裝置」</strong>。
           </div>
         </div>
       </div>
 
       {/* Advanced Settings Toggle */}
-      <div style={{ marginTop: '0.5rem' }}>
+      <div style={{ marginTop: '0.25rem' }}>
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
           style={{
             background: 'none',
             border: 'none',
-            color: 'var(--text-muted)',
+            color: 'var(--primary)',
             fontSize: '0.875rem',
+            fontWeight: 600,
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '0.35rem',
-            fontWeight: 500,
+            padding: 0,
           }}
         >
-          <Sliders size={16} />
-          {showAdvanced ? '隱藏進階排版設定' : '展開進階排版設定 (欄數與比例)'}
+          <Settings2 size={16} />
+          <span>{showAdvanced ? '收合進階排版設定' : '展開進階排版設定 (欄數與比例)'}</span>
         </button>
 
         {showAdvanced && (
           <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem',
             marginTop: '0.75rem',
-            padding: '1rem 1.25rem',
+            padding: '1rem',
             backgroundColor: '#f8fafc',
-            border: '1px solid var(--border)',
             borderRadius: 'var(--radius-md)',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '1.5rem',
+            border: '1px solid var(--border)',
           }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                圖表排版欄數 (Columns)
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-main)' }}>
+                畫布排版欄數 (Cols)
               </label>
               <input
                 type="number"
-                min="1"
-                max="10"
+                min={1}
+                max={12}
                 value={settings.cols}
                 disabled={disabled}
-                onChange={(e) => onChange({ ...settings, cols: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                onChange={(e) => onChange({ ...settings, cols: parseInt(e.target.value, 10) || 3 })}
                 style={{
-                  padding: '0.4rem 0.65rem',
+                  width: '100%',
+                  padding: '0.4rem 0.6rem',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border)',
-                  width: '100px',
                   fontSize: '0.875rem',
                 }}
               />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>預設為 3 欄</span>
             </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                圖形縮放比例 (Scale / DPI)
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-main)' }}>
+                縮放比例 (Scale / DPI)
               </label>
               <input
                 type="number"
-                min="50"
-                max="300"
-                step="10"
+                min={20}
+                max={600}
+                step={10}
                 value={settings.scale}
                 disabled={disabled}
-                onChange={(e) => onChange({ ...settings, scale: Math.max(10, parseFloat(e.target.value) || 120) })}
+                onChange={(e) => onChange({ ...settings, scale: parseFloat(e.target.value) || 120 })}
                 style={{
-                  padding: '0.4rem 0.65rem',
+                  width: '100%',
+                  padding: '0.4rem 0.6rem',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border)',
-                  width: '100px',
                   fontSize: '0.875rem',
                 }}
               />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>預設 120 (點/英吋)</span>
             </div>
           </div>
         )}
