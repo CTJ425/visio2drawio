@@ -12,7 +12,7 @@ interface StencilGalleryProps {
   isLoadingAll?: boolean;
 }
 
-export function StencilGallery({ items, total, fileName, onLoadAll, isLoadingAll }: StencilGalleryProps) {
+export function StencilGallery({ items, total, fileName: _fileName, onLoadAll, isLoadingAll }: StencilGalleryProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
 

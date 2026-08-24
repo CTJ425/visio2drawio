@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Terminal, Copy, Check, Trash2, ChevronDown, ChevronUp, Bug } from 'lucide-react';
+import { Copy, Check, Trash2, ChevronDown, ChevronUp, Bug } from 'lucide-react';
 
 export interface DebugLogEntry {
   timestamp: string;

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Layers, Library, Settings2, HelpCircle } from 'lucide-react';
+import { Layers, Library, Settings2 } from 'lucide-react';
 
 export interface ConvertSettings {
   format: 'drawio' | 'mxlibrary';
