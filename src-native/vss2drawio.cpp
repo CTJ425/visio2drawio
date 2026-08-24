@@ -161,7 +161,7 @@ public:
 std::string generateDrawioXml(const std::vector<StencilItem> &items, int numCols = 3, double scale = 120.0) {
     std::ostringstream oss;
     oss << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-    oss << "<mxfile host=\"visio2drawio\" modified=\"2026-08-19T00:00:00.000Z\" agent=\"visio2drawio\" version=\"21.1.2\" type=\"device\">\n";
+    oss << "<mxfile host=\"app.diagrams.net\" modified=\"2026-08-24T00:00:00.000Z\" agent=\"visio2drawio\" version=\"21.1.2\" type=\"device\">\n";
     oss << "  <diagram id=\"visio-stencils\" name=\"Visio Stencils\">\n";
     oss << "    <mxGraphModel dx=\"1400\" dy=\"900\" grid=\"1\" gridSize=\"10\" guides=\"1\" tooltips=\"1\" connect=\"1\" arrows=\"1\" fold=\"1\" page=\"1\" pageScale=\"1\" pageWidth=\"3600\" pageHeight=\"5000\" math=\"0\" shadow=\"0\">\n";
     oss << "      <root>\n";
@@ -205,7 +205,8 @@ std::string generateDrawioXml(const std::vector<StencilItem> &items, int numCols
         std::string base64Svg = base64_encode(item.svg);
         std::string escapedName = xmlEscape(item.name.empty() ? ("Shape " + std::to_string(i + 1)) : item.name);
 
-        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml;base64," + base64Svg + ";";
+        // Note: %3B is required in Draw.io style strings so mxGraph's style tokenizer doesn't prematurely split on the semicolon in base64
+        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml%3Bbase64," + base64Svg + ";";
 
         oss << "        <mxCell id=\"shape-" << i + 2 << "\" value=\"" << escapedName << "\" style=\"" << style << "\" vertex=\"1\" parent=\"1\">\n";
         oss << "          <mxGeometry x=\"" << std::fixed << std::setprecision(2) << posX << "\" y=\"" << posY << "\" width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\" />\n";
@@ -234,13 +235,19 @@ std::string generateMxLibraryXml(const std::vector<StencilItem> &items, double s
 
         std::string title = item.name.empty() ? ("Shape " + std::to_string(i + 1)) : item.name;
         std::string base64Svg = base64_encode(item.svg);
+        std::string dataUri = "data:image/svg+xml;base64," + base64Svg;
 
         std::ostringstream xmlStream;
         xmlStream << "<mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/><mxCell id=\"2\" value=\""
-                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml;base64,"
+                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml%3Bbase64,"
                   << base64Svg << ";\" vertex=\"1\" parent=\"1\"><mxGeometry width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\"/></mxCell></root></mxGraphModel>";
 
-        oss << "{\"title\":\"" << jsonEscape(title) << "\",\"w\":" << w << ",\"h\":" << h << ",\"xml\":\"" << jsonEscape(xmlStream.str()) << "\"}";
+        oss << "{\"title\":\"" << jsonEscape(title) << "\""
+            << ",\"w\":" << w
+            << ",\"h\":" << h
+            << ",\"aspect\":\"fixed\""
+            << ",\"data\":\"" << jsonEscape(dataUri) << "\""
+            << ",\"xml\":\"" << jsonEscape(xmlStream.str()) << "\"}";
     }
     oss << "]</mxlibrary>\n";
     return oss.str();
@@ -275,8 +282,15 @@ std::string generateJsonOutput(const std::vector<StencilItem> &items, int limit 
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: vss2drawio <input.vss|vsd|vssx|vsdx> [output_file] [--format drawio|mxlibrary|json] [--cols N] [--scale S] [--limit N]\n";
-        return 1;
+        std::cout << "vss2drawio - Visio Stencil (.vss) to draw.io converter\n\n";
+        std::cout << "Usage: vss2drawio <input_file> [output_file] [options]\n\n";
+        std::cout << "Options:\n";
+        std::cout << "  --format <drawio|mxlibrary|json>  Output format (default: drawio)\n";
+        std::cout << "  --cols <number>                   Grid columns in diagram (default: 3)\n";
+        std::cout << "  --scale <number>                  Points per inch scale (default: 120)\n";
+        std::cout << "  --limit <number>                  Limit stencil count in JSON output (0 = all)\n";
+        std::cout << "  -o <path>                         Output file path\n";
+        return 0;
     }
 
     std::string inputFile = "";
@@ -293,7 +307,7 @@ int main(int argc, char *argv[]) {
         } else if (arg == "--cols" && i + 1 < argc) {
             numCols = std::max(1, std::atoi(argv[++i]));
         } else if (arg == "--scale" && i + 1 < argc) {
-            scale = std::atof(argv[++i]);
+            scale = std::max(10.0, std::atof(argv[++i]));
         } else if (arg == "--limit" && i + 1 < argc) {
             limit = std::max(0, std::atoi(argv[++i]));
         } else if (arg == "-o" && i + 1 < argc) {
@@ -345,7 +359,9 @@ int main(int argc, char *argv[]) {
         item.widthInches = (i < delegate.widths.size()) ? delegate.widths[i] : 1.0;
         item.heightInches = (i < delegate.heights.size()) ? delegate.heights[i] : 1.0;
         item.svg = delegate.svgVector[i].cstr();
-        items.push_back(item);
+        if (!item.svg.empty()) {
+            items.push_back(item);
+        }
     }
 
     std::string result;
