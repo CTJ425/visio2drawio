@@ -205,8 +205,8 @@ std::string generateDrawioXml(const std::vector<StencilItem> &items, int numCols
         std::string base64Svg = base64_encode(item.svg);
         std::string escapedName = xmlEscape(item.name.empty() ? ("Shape " + std::to_string(i + 1)) : item.name);
 
-        // Note: %3B is required in Draw.io style strings so mxGraph's style tokenizer doesn't prematurely split on the semicolon in base64
-        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml%3Bbase64," + base64Svg + ";";
+        // Standard Draw.io format: image=data:image/svg+xml,<base64> without semicolon so mxGraph doesn't split style tokens
+        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml," + base64Svg + ";";
 
         oss << "        <mxCell id=\"shape-" << i + 2 << "\" value=\"" << escapedName << "\" style=\"" << style << "\" vertex=\"1\" parent=\"1\">\n";
         oss << "          <mxGeometry x=\"" << std::fixed << std::setprecision(2) << posX << "\" y=\"" << posY << "\" width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\" />\n";
@@ -223,10 +223,10 @@ std::string generateDrawioXml(const std::vector<StencilItem> &items, int numCols
 }
 
 std::string generateMxLibraryXml(const std::vector<StencilItem> &items, double scale = 120.0) {
-    std::ostringstream oss;
-    oss << "<mxlibrary>[";
+    std::ostringstream jsonStream;
+    jsonStream << "[";
     for (size_t i = 0; i < items.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0) jsonStream << ",";
         const auto &item = items[i];
         double w = std::round(item.widthInches * scale);
         double h = std::round(item.heightInches * scale);
@@ -235,21 +235,24 @@ std::string generateMxLibraryXml(const std::vector<StencilItem> &items, double s
 
         std::string title = item.name.empty() ? ("Shape " + std::to_string(i + 1)) : item.name;
         std::string base64Svg = base64_encode(item.svg);
-        std::string dataUri = "data:image/svg+xml;base64," + base64Svg;
+        std::string dataUri = "data:image/svg+xml," + base64Svg;
 
         std::ostringstream xmlStream;
         xmlStream << "<mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/><mxCell id=\"2\" value=\""
-                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml%3Bbase64,"
+                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,"
                   << base64Svg << ";\" vertex=\"1\" parent=\"1\"><mxGeometry width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\"/></mxCell></root></mxGraphModel>";
 
-        oss << "{\"title\":\"" << jsonEscape(title) << "\""
-            << ",\"w\":" << w
-            << ",\"h\":" << h
-            << ",\"aspect\":\"fixed\""
-            << ",\"data\":\"" << jsonEscape(dataUri) << "\""
-            << ",\"xml\":\"" << jsonEscape(xmlStream.str()) << "\"}";
+        jsonStream << "{\"title\":\"" << jsonEscape(title) << "\""
+                   << ",\"w\":" << w
+                   << ",\"h\":" << h
+                   << ",\"aspect\":\"fixed\""
+                   << ",\"data\":\"" << jsonEscape(dataUri) << "\""
+                   << ",\"xml\":\"" << jsonEscape(xmlStream.str()) << "\"}";
     }
-    oss << "]</mxlibrary>\n";
+    jsonStream << "]";
+
+    std::ostringstream oss;
+    oss << "<mxlibrary>" << xmlEscape(jsonStream.str()) << "</mxlibrary>\n";
     return oss.str();
 }
 

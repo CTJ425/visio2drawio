@@ -59,12 +59,12 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
       expect(parseFloat(width)).toBeGreaterThan(0);
       expect(parseFloat(height)).toBeGreaterThan(0);
 
-      // Verify draw.io style string uses %3B for base64 data URI to prevent mxGraph parser token split
+      // Verify draw.io style string uses image=data:image/svg+xml, without semicolon to prevent mxGraph parser token split
       expect(style).toContain('shape=image;');
-      expect(style).toContain('image=data:image/svg+xml%3Bbase64,');
+      expect(style).toContain('image=data:image/svg+xml,');
 
       // Extract Base64 SVG and decode
-      const b64Match = style.match(/image=data:image\/svg\+xml%3Bbase64,([^;]+);/);
+      const b64Match = style.match(/image=data:image\/svg\+xml,([^;]+);/);
       expect(b64Match).not.toBeNull();
       const b64 = b64Match![1];
       const svgText = Buffer.from(b64, 'base64').toString('utf-8');
@@ -84,10 +84,13 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
     const xml = await streamToString(stream);
     await cleanup();
 
-    expect(xml.startsWith('<mxlibrary>[')).toBe(true);
-    expect(xml.trimEnd().endsWith(']</mxlibrary>')).toBe(true);
+    expect(xml.startsWith('<mxlibrary>')).toBe(true);
+    expect(xml.trimEnd().endsWith('</mxlibrary>')).toBe(true);
 
-    const jsonStr = xml.slice('<mxlibrary>'.length, xml.lastIndexOf('</mxlibrary>')).trim();
+    const decodeXml = (s: string) =>
+      s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+    const jsonStr = decodeXml(xml.slice('<mxlibrary>'.length, xml.lastIndexOf('</mxlibrary>')).trim());
     const libraryItems = JSON.parse(jsonStr);
 
     expect(Array.isArray(libraryItems)).toBe(true);
@@ -107,8 +110,8 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
       expect(item.h).toBeGreaterThan(0);
 
       // Verify item.data is valid svg data URI
-      expect(item.data.startsWith('data:image/svg+xml;base64,')).toBe(true);
-      const b64 = item.data.replace('data:image/svg+xml;base64,', '');
+      expect(item.data.startsWith('data:image/svg+xml,')).toBe(true);
+      const b64 = item.data.replace('data:image/svg+xml,', '');
       const decodedSvg = Buffer.from(b64, 'base64').toString('utf-8');
       expect(decodedSvg).toContain('<svg');
       expect(decodedSvg).toContain('</svg>');

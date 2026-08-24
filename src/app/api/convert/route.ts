@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { convertVisioFileStream } from '@/lib/converter';
 import path from 'node:path';
 
+export async function GET() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: '請使用 POST 方法並夾帶 Visio 檔案進行轉檔，或透過 http://localhost:3000 網頁介面操作。',
+    },
+    { status: 405 }
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();

@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertVisioPreview } from '@/lib/converter';
 
+export async function GET() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: '請使用 POST 方法並夾帶 Visio 檔案以取得預覽。',
+    },
+    { status: 405 }
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();

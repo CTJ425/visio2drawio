@@ -73,7 +73,9 @@ test.describe('QA Deep Verification Suite', () => {
 
     const libraryJsonMatch = xmlContent.match(/<mxlibrary>([\s\S]*?)<\/mxlibrary>/);
     expect(libraryJsonMatch).not.toBeNull();
-    const libraryItems = JSON.parse(libraryJsonMatch![1].trim());
+    const decodeXml = (s: string) =>
+      s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const libraryItems = JSON.parse(decodeXml(libraryJsonMatch![1].trim()));
     expect(Array.isArray(libraryItems)).toBe(true);
     expect(libraryItems).toHaveLength(12);
 
