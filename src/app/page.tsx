@@ -164,6 +164,7 @@ export default function Home() {
         <div className="badge">
           <Sparkles size={14} /> LibVisio WebAssembly・檔案只在瀏覽器內處理
         </div>
+        <div className="app-version">v{process.env.APP_VERSION}</div>
         <h1 className="title">
           Visio to <span className="title-gradient">Draw.io</span>
         </h1>
