@@ -68,6 +68,18 @@ describe('Converter Unit Tests (WASM engine)', () => {
     expect(svgs.every((svg) => !svg.includes('<image ') || svg.includes('xlink:href="data:image/svg+xml;base64,'))).toBe(true);
   });
 
+  it('should draw EMF+ dual pictures from their GDI records, which emf-converter renders completely', async () => {
+    const result = JSON.parse(await convertToText(hpePath, { format: 'json' }));
+    const front = result.items.find((item: { title: string }) => item.title === 'RL300 Gen11 8SFF Front');
+    const svg = Buffer.from(front.svgBase64.split(',')[1], 'base64').toString('utf-8');
+    const picture = svg.match(/xlink:href="data:image\/svg\+xml;base64,([^"]+)"/)![1];
+    const pictureSvg = Buffer.from(picture, 'base64').toString('utf-8');
+
+    // From EMF+ only the chassis ears come out (177 paths); the GDI records draw the
+    // drive bays, vents and ports as well (750 paths).
+    expect((pictureSvg.match(/<path/g) || []).length).toBeGreaterThan(500);
+  });
+
   it('should reject invalid or unsupported files gracefully', async () => {
     const fakeBytes = new TextEncoder().encode('This is a plain text file, not Visio');
     await expect(convertVisio(fakeBytes, { format: 'json' })).rejects.toThrow(/Unsupported Visio file format/);

@@ -108,32 +108,56 @@ async function embedMetafilesAsSvg(svgB64, metafiles) {
   return toBase64(new TextEncoder().encode(fixed));
 }
 
-// emf-converter unrolls EMF+ tiled gradients into thousands of <stop>s (up to ~90% of the
-// SVG); a stencil file of these would outgrow the maximum JS string length. Such stripes are
-// finer than a stencil is ever displayed, so fill them with their average colour instead.
-const MAX_GRADIENT_STOPS = 256;
-const GRADIENT = /<(linearGradient|radialGradient)( [^>]*)>(.*?)<\/\1>/g;
-const STOP_COLOR = /stop-color="#([0-9a-f]{6})"/g;
-
 async function metafileToSvgBase64(metaB64) {
   let svg = null;
   try {
     // Caps the viewBox; without it wide pictures are clamped to 8192px, distorting the aspect ratio.
-    svg = await convertMetafileToSvg(fromBase64(metaB64).buffer, { maxWidth: 4096, maxHeight: 4096 });
+    svg = await convertMetafileToSvg(dropDualEmfPlus(fromBase64(metaB64)).buffer, { maxWidth: 4096, maxHeight: 4096 });
   } catch {
     // A malformed picture should not fail the whole stencil file; keep the original.
   }
   if (!svg) return null;
-  svg = svg.replace(GRADIENT, (gradient, tag, attrs, stops) => {
-    const colors = Array.from(stops.matchAll(STOP_COLOR), (m) => parseInt(m[1], 16));
-    if (colors.length <= MAX_GRADIENT_STOPS) return gradient;
-    const average = [16, 8, 0]
-      .map((shift) => Math.round(colors.reduce((sum, c) => sum + ((c >> shift) & 0xff), 0) / colors.length))
-      .map((channel) => channel.toString(16).padStart(2, '0'))
-      .join('');
-    return `<${tag}${attrs}><stop offset="0" stop-color="#${average}"/></${tag}>`;
-  });
   return toBase64(new TextEncoder().encode(svg));
+}
+
+// emf-converter leaves out most of what the EMF+ records of Visio's pictures draw (a server
+// front comes out as just its chassis ears). An EMF+ "dual" file also records the whole
+// picture as plain GDI records, which it renders faithfully, so drop the EMF+ records there.
+const EMR_HEADER = 1;
+const EMR_COMMENT = 70;
+const EMF_PLUS_TAG = 0x2b464d45; // 'EMF+'
+const EMF_PLUS_HEADER = 0x4001;
+
+function dropDualEmfPlus(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 88 || view.getUint32(0, true) !== EMR_HEADER) return bytes; // e.g. WMF
+
+  const kept = [];
+  let dual = false;
+  for (let offset = 0; offset + 8 <= bytes.length; ) {
+    const size = view.getUint32(offset + 4, true);
+    if (size < 8 || offset + size > bytes.length) return bytes; // malformed; leave it as is
+    const isEmfPlus =
+      view.getUint32(offset, true) === EMR_COMMENT && size >= 20 && view.getUint32(offset + 12, true) === EMF_PLUS_TAG;
+    if (!isEmfPlus) {
+      kept.push(bytes.subarray(offset, offset + size));
+    } else if (view.getUint16(offset + 16, true) === EMF_PLUS_HEADER) {
+      dual = (view.getUint16(offset + 18, true) & 1) === 1;
+    }
+    offset += size;
+  }
+  if (!dual) return bytes;
+
+  const out = new Uint8Array(kept.reduce((total, record) => total + record.length, 0));
+  let at = 0;
+  for (const record of kept) {
+    out.set(record, at);
+    at += record.length;
+  }
+  const outView = new DataView(out.buffer);
+  outView.setUint32(48, out.length, true); // header nBytes
+  outView.setUint32(52, kept.length, true); // header nRecords
+  return out;
 }
 
 async function replaceAsync(text, regex, replacer) {
