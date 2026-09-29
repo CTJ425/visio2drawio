@@ -51,3 +51,33 @@ test('Test native Draw.io menu: Open Library and drag shape to canvas', async ({
   await page.screenshot({ path: 'drawio_library_and_canvas_complete.png', fullPage: false });
   console.log('Saved drawio_library_and_canvas_complete.png');
 });
+
+test('draw.io uses the Visio connection points as the shape connection points', async ({ page }) => {
+  test.setTimeout(90000);
+
+  const vssx = await fs.readFile(path.resolve('tests/fixtures/connection-points.vssx'));
+  const xml = new TextDecoder().decode(await convertVisio(vssx, { format: 'drawio' }));
+
+  await page.goto('https://app.diagrams.net/?splash=0&offline=1&local=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => 'Graph' in window && 'mxCodec' in window, null, { timeout: 60000 });
+
+  const points = await page.evaluate((xml) => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const w = window as any;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const graph = new w.Graph(container);
+    const doc = w.mxUtils.parseXml(xml);
+    new w.mxCodec(doc).decode(doc.querySelector('mxGraphModel'), graph.getModel());
+    const cell = Object.values(graph.getModel().cells).find((c: any) => c.vertex);
+    const state = graph.view.getState(cell);
+    const constraints = graph.getAllConnectionConstraints(state, true) || [];
+    // Where an edge attaches, relative to the shape's top-left corner
+    return constraints.map((c: any) => {
+      const p = graph.getConnectionPoint(state, c);
+      return [(p.x - state.x) / state.width, (p.y - state.y) / state.height];
+    });
+  }, xml);
+
+  expect(points).toEqual([[0, 0.5], [1, 0.5], [0.5, 0]]);
+});

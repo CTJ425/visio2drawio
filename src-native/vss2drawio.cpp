@@ -18,6 +18,7 @@ struct StencilItem {
     double widthInches;
     double heightInches;
     std::string svg;
+    std::vector<std::pair<double, double>> connectionPoints; // fractions of width/height from the top left
 };
 
 // Base64 encoder helper
@@ -58,6 +59,21 @@ static std::string xmlEscape(const std::string &data) {
     return buffer;
 }
 
+// draw.io style fragment that replaces its default connection points with Visio's. The
+// trailing 0 attaches edges at the point itself, as Visio does, instead of on the outline.
+static std::string connectionPointsStyle(const StencilItem &item) {
+    if (item.connectionPoints.empty()) return "";
+    std::ostringstream ss;
+    ss << "points=[";
+    for (size_t i = 0; i < item.connectionPoints.size(); ++i) {
+        if (i > 0) ss << ",";
+        ss << "[" << std::round(item.connectionPoints[i].first * 10000) / 10000 << ","
+           << std::round(item.connectionPoints[i].second * 10000) / 10000 << ",0]";
+    }
+    ss << "];";
+    return ss.str();
+}
+
 static std::string jsonEscape(const std::string &data) {
     std::ostringstream ss;
     for (char c : data) {
@@ -87,6 +103,7 @@ public:
     std::vector<std::string> names;
     std::vector<double> widths;
     std::vector<double> heights;
+    std::vector<std::vector<std::pair<double, double>>> connectionPoints;
 
     StencilDelegate() : generator(svgVector, "") {}
 
@@ -109,6 +126,17 @@ public:
         names.push_back(name);
         widths.push_back(w);
         heights.push_back(h);
+        // Added by the patched libvisio (scripts/libvisio-connection-points.patch), in page inches.
+        std::vector<std::pair<double, double>> points;
+        if (const librevenge::RVNGPropertyListVector *pts = p.child("libvisio:connection-points")) {
+            for (unsigned long k = 0; k < pts->count(); ++k) {
+                const librevenge::RVNGPropertyList &pt = (*pts)[k];
+                if (pt["svg:x"] && pt["svg:y"]) {
+                    points.emplace_back(pt["svg:x"]->getDouble() / w, pt["svg:y"]->getDouble() / h);
+                }
+            }
+        }
+        connectionPoints.push_back(points);
         generator.startPage(p);
     }
     void endPage() override { generator.endPage(); }
@@ -206,7 +234,7 @@ std::string generateDrawioXml(const std::vector<StencilItem> &items, int numCols
         std::string escapedName = xmlEscape(item.name.empty() ? ("Shape " + std::to_string(i + 1)) : item.name);
 
         // draw.io splits styles on ';', so the image URI omits ';base64' (draw.io re-adds it when rendering)
-        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml," + base64Svg + ";";
+        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;" + connectionPointsStyle(item) + "image=data:image/svg+xml," + base64Svg + ";";
 
         oss << "        <mxCell id=\"shape-" << i + 2 << "\" value=\"" << escapedName << "\" style=\"" << style << "\" vertex=\"1\" parent=\"1\">\n";
         oss << "          <mxGeometry x=\"" << std::fixed << std::setprecision(2) << posX << "\" y=\"" << posY << "\" width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\" />\n";
@@ -240,7 +268,8 @@ std::string generateMxLibraryXml(const std::vector<StencilItem> &items, double s
 
         std::ostringstream xmlStream;
         xmlStream << "<mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/><mxCell id=\"2\" value=\""
-                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,"
+                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;"
+                  << connectionPointsStyle(item) << "image=data:image/svg+xml,"
                   << base64Svg << ";\" vertex=\"1\" parent=\"1\"><mxGeometry width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\"/></mxCell></root></mxGraphModel>";
 
         jsonStream << "{\"title\":\"" << jsonEscape(title) << "\""
@@ -313,6 +342,7 @@ int convertVisioStream(librevenge::RVNGInputStream &input, const std::string &fo
         item.name = (i < delegate.names.size()) ? delegate.names[i] : "";
         item.widthInches = (i < delegate.widths.size()) ? delegate.widths[i] : 1.0;
         item.heightInches = (i < delegate.heights.size()) ? delegate.heights[i] : 1.0;
+        if (i < delegate.connectionPoints.size()) item.connectionPoints = delegate.connectionPoints[i];
         item.svg = delegate.svgVector[i].cstr();
         if (!item.svg.empty()) {
             items.push_back(item);

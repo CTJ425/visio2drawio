@@ -6,7 +6,7 @@
 # src-native/vss2drawio.cpp against them.
 #
 # Requirements: emsdk activated (emcc on PATH), icupkg (apt: icu-devtools),
-# curl, make, gperf, python3.
+# curl, make, gperf, patch, python3.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,7 +19,7 @@ LIBXML2_VERSION=2.13.9
 LIBREVENGE_VERSION=0.0.5
 LIBVISIO_VERSION=0.1.11
 
-for tool in emcc emconfigure embuilder icupkg curl make gperf; do
+for tool in emcc emconfigure embuilder icupkg curl make gperf patch; do
   command -v "$tool" >/dev/null || { echo "error: '$tool' not found on PATH" >&2; exit 1; }
 done
 
@@ -43,6 +43,14 @@ fetch "https://download.gnome.org/sources/libxml2/${LIBXML2_VERSION%.*}/libxml2-
 fetch "https://sourceforge.net/projects/libwpd/files/librevenge/librevenge-$LIBREVENGE_VERSION/librevenge-$LIBREVENGE_VERSION.tar.xz/download" "librevenge-$LIBREVENGE_VERSION"
 fetch "https://dev-www.libreoffice.org/src/libvisio/libvisio-$LIBVISIO_VERSION.tar.xz" "libvisio-$LIBVISIO_VERSION"
 
+PATCH="$ROOT/scripts/libvisio-connection-points.patch"
+PATCHED="$WORK/src/libvisio-$LIBVISIO_VERSION/.connection-points-patched"
+if [ ! -f "$PATCHED" ]; then
+  echo "==> patching libvisio (connection points)"
+  patch -d "$WORK/src/libvisio-$LIBVISIO_VERSION" -p1 < "$PATCH"
+  touch "$PATCHED"
+fi
+
 if [ ! -f "$PREFIX/lib/libxml2.a" ]; then
   echo "==> libxml2"
   cd "$WORK/src/libxml2-$LIBXML2_VERSION"
@@ -63,7 +71,7 @@ if [ ! -f "$PREFIX/lib/librevenge-0.0.a" ]; then
   emmake make -j"$JOBS" install
 fi
 
-if [ ! -f "$PREFIX/lib/libvisio-0.1.a" ]; then
+if [ ! -f "$PREFIX/lib/libvisio-0.1.a" ] || [ "$PATCH" -nt "$PREFIX/lib/libvisio-0.1.a" ]; then
   echo "==> libvisio"
   cd "$WORK/src/libvisio-$LIBVISIO_VERSION"
   emconfigure ./configure --prefix="$PREFIX" --host=wasm32-unknown-emscripten \

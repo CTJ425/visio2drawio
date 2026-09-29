@@ -1,0 +1,327 @@
+Read Visio connection points (libvisio 0.1.11 parses but drops them).
+
+- .vss/.vsd: rows of chunk 0x99 (X, Y, DirX, DirY; each a type byte and a double)
+- .vssx/.vsdx: <Section N="Connection"> rows with X and Y cells
+Points are transformed to page coordinates like geometry and handed to the painter
+as the "libvisio:connection-points" property list vector of startPage().
+Applied by scripts/build-wasm.sh.
+
+--- a/src/lib/VSDStencils.h
++++ b/src/lib/VSDStencils.h
+@@ -58,6 +58,7 @@
+   VSDMisc m_misc;
+   VSDName m_layerMem;
+   VSDName m_aName;
++  std::map<unsigned, std::pair<double, double> > m_connectionPoints;
+ };
+ 
+ class VSDStencil
+--- a/src/lib/VSDStencils.cpp
++++ b/src/lib/VSDStencils.cpp
+@@ -17,7 +17,7 @@
+     m_textStyleId(MINUS_ONE), m_lineStyle(), m_fillStyle(), m_textBlockStyle(), m_charStyle(),
+     m_charList(), m_paraStyle(), m_paraList(), m_tabSets(), m_text(), m_names(),
+     m_textFormat(libvisio::VSD_TEXT_UTF16), m_nurbsData(), m_polylineData(), m_xform(), m_txtxform(),
+-    m_xform1d(), m_misc(), m_layerMem(), m_aName()
++    m_xform1d(), m_misc(), m_layerMem(), m_aName(), m_connectionPoints()
+ {
+ }
+ 
+@@ -32,7 +32,7 @@
+     m_textFormat(shape.m_textFormat), m_nurbsData(shape.m_nurbsData), m_polylineData(shape.m_polylineData),
+     m_xform(shape.m_xform), m_txtxform(shape.m_txtxform ? new XForm(*(shape.m_txtxform)) : nullptr),
+     m_xform1d(shape.m_xform1d ? new XForm1D(*(shape.m_xform1d)) : nullptr), m_misc(shape.m_misc),
+-    m_layerMem(shape.m_layerMem), m_aName(shape.m_aName)
++    m_layerMem(shape.m_layerMem), m_aName(shape.m_aName), m_connectionPoints(shape.m_connectionPoints)
+ {
+ }
+ 
+@@ -75,6 +75,7 @@
+     m_misc = shape.m_misc;
+     m_layerMem = shape.m_layerMem;
+     m_aName = shape.m_aName;
++    m_connectionPoints = shape.m_connectionPoints;
+   }
+   return *this;
+ }
+@@ -86,6 +87,7 @@
+   m_xform1d = nullptr;
+ 
+   m_geometries.clear();
++  m_connectionPoints.clear();
+   m_shapeList.clear();
+   m_fields.clear();
+   m_lineStyle = VSDOptionalLineStyle();
+--- a/src/lib/VSDCollector.h
++++ b/src/lib/VSDCollector.h
+@@ -45,6 +45,7 @@
+   virtual void collectGeometry(unsigned id, unsigned level, bool noFill, bool noLine, bool noShow) = 0;
+   virtual void collectMoveTo(unsigned id, unsigned level, double x, double y) = 0;
+   virtual void collectLineTo(unsigned id, unsigned level, double x, double y) = 0;
++  virtual void collectConnectionPoint(unsigned level, double x, double y) = 0;
+   virtual void collectArcTo(unsigned id, unsigned level, double x2, double y2, double bow) = 0;
+   virtual void collectNURBSTo(unsigned id, unsigned level, double x2, double y2, unsigned char xType, unsigned char yType, unsigned degree,
+                               const std::vector<std::pair<double, double> > &ctrlPnts, const std::vector<double> &kntVec, const std::vector<double> &weights) = 0;
+--- a/src/lib/VSDStylesCollector.h
++++ b/src/lib/VSDStylesCollector.h
+@@ -32,6 +32,7 @@
+   ~VSDStylesCollector() override {}
+ 
+   void collectDocumentTheme(const VSDXTheme * /* theme */) override {}
++  void collectConnectionPoint(unsigned /* level */, double /* x */, double /* y */) override {}
+   void collectEllipticalArcTo(unsigned id, unsigned level, double x3, double y3, double x2, double y2, double angle, double ecc) override;
+   void collectForeignData(unsigned level, const librevenge::RVNGBinaryData &binaryData) override;
+   void collectOLEList(unsigned id, unsigned level) override
+--- a/src/lib/VSDContentCollector.h
++++ b/src/lib/VSDContentCollector.h
+@@ -93,6 +93,7 @@
+   void collectRelQuadBezTo(unsigned id, unsigned level, double x, double y, double a, double b) override;
+ 
+   void collectUnhandledChunk(unsigned id, unsigned level) override;
++  void collectConnectionPoint(unsigned level, double x, double y) override;
+ 
+   void collectText(unsigned level, const librevenge::RVNGBinaryData &textStream, TextFormat format) override;
+   void collectCharIX(unsigned id, unsigned level, unsigned charCount, const std::optional<VSDName> &font,
+--- a/src/lib/VSDContentCollector.cpp
++++ b/src/lib/VSDContentCollector.cpp
+@@ -1897,6 +1897,13 @@
+     m_currentLineGeometry.push_back(end);
+ }
+ 
++void libvisio::VSDContentCollector::collectConnectionPoint(unsigned level, double x, double y)
++{
++  _handleLevelChange(level);
++  transformPoint(x, y);
++  m_currentPage.m_connectionPoints.push_back(std::make_pair(m_scale*x, m_scale*y));
++}
++
+ void libvisio::VSDContentCollector::collectArcTo(unsigned /* id */, unsigned level, double x2, double y2, double bow)
+ {
+   _handleLevelChange(level);
+--- a/src/lib/VSDPages.h
++++ b/src/lib/VSDPages.h
+@@ -10,6 +10,8 @@
+ #ifndef __VSDPAGES_H__
+ #define __VSDPAGES_H__
+ 
++#include <utility>
++#include <vector>
+ #include "VSDOutputElementList.h"
+ #include "VSDTypes.h"
+ 
+@@ -29,6 +31,7 @@
+   librevenge::RVNGString m_pageName;
+   unsigned m_currentPageID, m_backgroundPageID;
+   VSDOutputElementList m_pageElements;
++  std::vector<std::pair<double, double> > m_connectionPoints; // in page coordinates
+ };
+ 
+ class VSDPages
+@@ -42,6 +45,7 @@
+   void setMetaData(const librevenge::RVNGPropertyList &metaData);
+ private:
+   void _drawWithBackground(librevenge::RVNGDrawingInterface *painter, const VSDPage &page);
++  static void _insertConnectionPoints(librevenge::RVNGPropertyList &pageProps, const VSDPage &page);
+   std::vector<VSDPage> m_pages;
+   std::map<unsigned, VSDPage> m_backgroundPages;
+   librevenge::RVNGPropertyList m_metaData;
+--- a/src/lib/VSDPages.cpp
++++ b/src/lib/VSDPages.cpp
+@@ -21,7 +21,7 @@
+ libvisio::VSDPage::VSDPage(const libvisio::VSDPage &page)
+   : m_pageWidth(page.m_pageWidth), m_pageHeight(page.m_pageHeight), m_pageName(page.m_pageName),
+     m_currentPageID(page.m_currentPageID), m_backgroundPageID(page.m_backgroundPageID),
+-    m_pageElements(page.m_pageElements)
++    m_pageElements(page.m_pageElements), m_connectionPoints(page.m_connectionPoints)
+ {
+ }
+ 
+@@ -39,6 +39,7 @@
+     m_currentPageID = page.m_currentPageID;
+     m_backgroundPageID = page.m_backgroundPageID;
+     m_pageElements = page.m_pageElements;
++    m_connectionPoints = page.m_connectionPoints;
+   }
+   return *this;
+ }
+@@ -91,6 +92,7 @@
+     pageProps.insert("svg:height", page.m_pageHeight);
+     if (page.m_pageName.len())
+       pageProps.insert("draw:name", page.m_pageName);
++    _insertConnectionPoints(pageProps, page);
+     painter->startPage(pageProps);
+     _drawWithBackground(painter, page);
+     painter->endPage();
+@@ -104,6 +106,7 @@
+     pageProps.insert("svg:height", iter->second.m_pageHeight);
+     if (iter->second.m_pageName.len())
+       pageProps.insert("draw:name", iter->second.m_pageName);
++    _insertConnectionPoints(pageProps, iter->second);
+     painter->startPage(pageProps);
+     _drawWithBackground(painter, iter->second);
+     painter->endPage();
+@@ -112,6 +115,21 @@
+   painter->endDocument();
+ }
+ 
++void libvisio::VSDPages::_insertConnectionPoints(librevenge::RVNGPropertyList &pageProps, const libvisio::VSDPage &page)
++{
++  if (page.m_connectionPoints.empty())
++    return;
++  librevenge::RVNGPropertyListVector points;
++  for (const auto &point : page.m_connectionPoints)
++  {
++    librevenge::RVNGPropertyList p;
++    p.insert("svg:x", point.first);
++    p.insert("svg:y", point.second);
++    points.append(p);
++  }
++  pageProps.insert("libvisio:connection-points", points);
++}
++
+ void libvisio::VSDPages::_drawWithBackground(librevenge::RVNGDrawingInterface *painter, const libvisio::VSDPage &page)
+ {
+   if (!painter)
+--- a/src/lib/VSDParser.h
++++ b/src/lib/VSDParser.h
+@@ -63,6 +63,7 @@
+   void readGeometry(librevenge::RVNGInputStream *input);
+   void readMoveTo(librevenge::RVNGInputStream *input);
+   void readLineTo(librevenge::RVNGInputStream *input);
++  void readConnectionPoint(librevenge::RVNGInputStream *input);
+   void readArcTo(librevenge::RVNGInputStream *input);
+   void readNURBSTo(librevenge::RVNGInputStream *input);
+   void readPolylineTo(librevenge::RVNGInputStream *input);
+--- a/src/lib/VSDParser.cpp
++++ b/src/lib/VSDParser.cpp
+@@ -503,6 +503,9 @@
+   case VSD_LINE_TO:
+     readLineTo(input);
+     break;
++  case VSD_CONNECTION_POINTS:
++    readConnectionPoint(input);
++    break;
+   case VSD_ARC_TO:
+     readArcTo(input);
+     break;
+@@ -696,6 +699,9 @@
+   for (std::map<unsigned, VSDGeometryList>::const_iterator iterGeom = m_shape.m_geometries.begin(); iterGeom != m_shape.m_geometries.end(); ++iterGeom)
+     iterGeom->second.handle(m_collector);
+ 
++  for (const auto &point : m_shape.m_connectionPoints)
++    m_collector->collectConnectionPoint(m_currentShapeLevel+2, point.second.first, point.second.second);
++
+   m_collector->collectDefaultCharStyle(m_shape.m_charStyle.charCount, m_shape.m_charStyle.font, m_shape.m_charStyle.colour,
+                                        m_shape.m_charStyle.size, m_shape.m_charStyle.bold, m_shape.m_charStyle.italic, m_shape.m_charStyle.underline,
+                                        m_shape.m_charStyle.doubleunderline, m_shape.m_charStyle.strikeout, m_shape.m_charStyle.doublestrikeout,
+@@ -1125,6 +1131,17 @@
+     m_currentGeometryList->addLineTo(m_header.id, m_header.level, x, y);
+ }
+ 
++void libvisio::VSDParser::readConnectionPoint(librevenge::RVNGInputStream *input)
++{
++  input->seek(1, librevenge::RVNG_SEEK_CUR);
++  double x = readDouble(input);
++  input->seek(1, librevenge::RVNG_SEEK_CUR);
++  double y = readDouble(input);
++
++  if (m_isShapeStarted)
++    m_shape.m_connectionPoints[m_header.id] = std::make_pair(x, y);
++}
++
+ void libvisio::VSDParser::readArcTo(librevenge::RVNGInputStream *input)
+ {
+   input->seek(1, librevenge::RVNG_SEEK_CUR);
+--- a/src/lib/VSDXMLParserBase.cpp
++++ b/src/lib/VSDXMLParserBase.cpp
+@@ -1824,6 +1824,9 @@
+     }
+   }
+ 
++  for (const auto &point : m_shape.m_connectionPoints)
++    m_collector->collectConnectionPoint(m_currentShapeLevel+2, point.second.first, point.second.second);
++
+   if (m_shape.m_foreign && m_shape.m_foreign->data.size())
+     m_collector->collectForeignData(m_currentShapeLevel+1, m_shape.m_foreign->data);
+ 
+--- a/src/lib/VSDXParser.h
++++ b/src/lib/VSDXParser.h
+@@ -71,6 +71,7 @@
+   void readStyleProperties(xmlTextReaderPtr reader);
+ 
+   void readShapeProperties(xmlTextReaderPtr reader);
++  void readConnection(xmlTextReaderPtr reader);
+ 
+   void getBinaryData(xmlTextReaderPtr reader) override;
+ 
+--- a/src/lib/VSDXParser.cpp
++++ b/src/lib/VSDXParser.cpp
+@@ -1307,6 +1307,10 @@
+       if (XML_READER_TYPE_ELEMENT == tokenType)
+         readGeometry(reader);
+       break;
++    case XML_CONNECTION:
++      if (XML_READER_TYPE_ELEMENT == tokenType && XML_SECTION == tokenClass)
++        readConnection(reader);
++      break;
+     case XML_TEXT:
+       if (XML_READER_TYPE_ELEMENT == tokenType)
+         readText(reader);
+@@ -1355,6 +1359,47 @@
+     processXmlNode(reader);
+ }
+ 
++void libvisio::VSDXParser::readConnection(xmlTextReaderPtr reader)
++{
++  if (xmlTextReaderIsEmptyElement(reader))
++    return;
++
++  int ret = 1;
++  int tokenId = XML_TOKEN_INVALID;
++  int tokenType = -1;
++  unsigned ix = 0;
++  std::optional<double> x;
++  std::optional<double> y;
++
++  do
++  {
++    ret = xmlTextReaderRead(reader);
++    tokenId = getElementToken(reader);
++    tokenType = xmlTextReaderNodeType(reader);
++    const bool isRow = xmlStrEqual(xmlTextReaderConstName(reader), BAD_CAST("Row"));
++
++    if (isRow && XML_READER_TYPE_ELEMENT == tokenType)
++    {
++      ix = getIX(reader);
++      x.reset();
++      y.reset();
++      const std::shared_ptr<xmlChar> delString(xmlTextReaderGetAttribute(reader, BAD_CAST("Del")), xmlFree);
++      if (delString && xmlStringToBool(delString))
++        m_shape.m_connectionPoints.erase(ix);
++    }
++    else if (isRow && XML_READER_TYPE_END_ELEMENT == tokenType)
++    {
++      if (x && y)
++        m_shape.m_connectionPoints[ix] = std::make_pair(*x, *y);
++    }
++    else if (XML_X == tokenId && XML_READER_TYPE_ELEMENT == tokenType)
++      ret = readDoubleData(x, reader);
++    else if (XML_Y == tokenId && XML_READER_TYPE_ELEMENT == tokenType)
++      ret = readDoubleData(y, reader);
++  }
++  while ((XML_SECTION != tokenId || XML_READER_TYPE_END_ELEMENT != tokenType) && 1 == ret && (!m_watcher || !m_watcher->isError()));
++}
++
+ void libvisio::VSDXParser::readLayer(xmlTextReaderPtr reader)
+ {
+   int ret = 1;
+--- a/src/lib/tokens.txt
++++ b/src/lib/tokens.txt
+@@ -75,6 +75,7 @@
+ Colors
+ ColorSchemeIndex
+ Company
++Connection
+ ConnectorSchemeIndex
+ cp
+ cp:category

@@ -25,7 +25,8 @@
    - 底層採用 `libvisio 0.1.11`、`librevenge 0.0.5`、`libxml2`，完整保留原始向量形狀、文字與尺寸比例。
    - 轉換在 Web Worker 中執行，不會卡住頁面；已實測 55 MB、281 個形狀的圖形庫。
    - ICU 只打包 libvisio 用到的 Windows code page（1250–1258、874、932、936、949、950），WASM 約 1.7 MB。
-4. **零後端**：Next.js `output: 'export'` 靜態輸出，沒有 API、沒有伺服器成本，也沒有上傳大小限制。
+4. **保留 Visio 連接點**：形狀的連接點 (connection points) 會轉成 Draw.io 的 `points` 樣式，連線會接在與 Visio 相同的位置（例如網卡的每個埠）；沒有連接點的形狀維持 Draw.io 預設。
+5. **零後端**：Next.js `output: 'export'` 靜態輸出，沒有 API、沒有伺服器成本，也沒有上傳大小限制。
 
 ---
 
@@ -77,13 +78,13 @@ git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
 source ~/emsdk/emsdk_env.sh
 
 # 2. 建置工具（Ubuntu / Debian）
-sudo apt-get install build-essential gperf icu-devtools curl
+sudo apt-get install build-essential gperf icu-devtools curl patch
 
 # 3. 建置，輸出到 public/wasm/
 npm run build:wasm
 ```
 
-腳本 `scripts/build-wasm.sh` 會下載並交叉編譯 libxml2、librevenge、libvisio，暫存目錄為 `.wasm-build/`（已 gitignore，第二次執行會跳過已建好的函式庫）。完成後請把 `public/wasm/vss2drawio.mjs` 與 `public/wasm/vss2drawio.wasm` 一起提交。
+腳本 `scripts/build-wasm.sh` 會下載並交叉編譯 libxml2、librevenge、libvisio（先套用 `scripts/libvisio-connection-points.patch`，讓 libvisio 讀出連接點），暫存目錄為 `.wasm-build/`（已 gitignore，第二次執行會跳過已建好的函式庫）。完成後請把 `public/wasm/vss2drawio.mjs` 與 `public/wasm/vss2drawio.wasm` 一起提交。
 
 原生 CLI 版本仍可用 `npm run build:native` 編譯到 `bin/`（需要系統安裝 `libvisio-dev`、`librevenge-dev`、`pkg-config`），僅供本機除錯使用，網站不會用到。
 
@@ -161,11 +162,13 @@ visio2drawio/
 │   └── wasm/                    # 瀏覽器端轉換引擎
 │       ├── vss2drawio.mjs       # Emscripten 產生的載入器（預先建置）
 │       ├── vss2drawio.wasm      # libvisio WebAssembly（預先建置）
-│       ├── converter-core.mjs   # JS ⇄ WASM 資料搬移
+│       ├── converter-core.mjs   # JS ⇄ WASM 資料搬移、EMF 轉 SVG
+│       ├── emf-converter.mjs    # emf-converter 套件（npm run vendor:emf 複製）
 │       └── converter.worker.mjs # Web Worker 入口
 ├── samples/                     # 範例 Visio 檔案 (.vss)
 ├── scripts/
-│   └── build-wasm.sh            # 以 Emscripten 重建 public/wasm
+│   ├── build-wasm.sh            # 以 Emscripten 重建 public/wasm
+│   └── libvisio-connection-points.patch # 讓 libvisio 讀出連接點
 ├── src-native/
 │   └── vss2drawio.cpp           # 轉換核心（WASM 匯出 + 原生 CLI）
 ├── src/
@@ -181,6 +184,7 @@ visio2drawio/
 │   └── lib/
 │       └── converter.ts         # Web Worker client
 └── tests/
+    ├── fixtures/                # 測試用 Visio 檔（含產生腳本）
     ├── unit/                    # WASM 引擎單元測試
     └── e2e/                     # Playwright 瀏覽器端對端測試
 ```
