@@ -1,7 +1,9 @@
 // Marshalling between JS and the libvisio WASM build (vss2drawio.mjs).
 // Shared by the browser Web Worker and the Node unit tests, so it must stay
-// dependency-free plain ESM.
+// plain ESM that imports only files in this directory.
 import createVss2drawio from './vss2drawio.mjs';
+// Vendored from the emf-converter npm package (npm run vendor:emf).
+import { convertMetafileToSvg } from './emf-converter.mjs';
 
 let modulePromise = null;
 
@@ -61,5 +63,101 @@ export async function convertVisio(input, options = {}) {
   const end = heap.indexOf(0, outPtr);
   const output = heap.slice(outPtr, end);
   Module._v2d_free(outPtr);
-  return output;
+  return postProcess(output);
+}
+
+const SVG_DATA_URI = /data:image\/svg\+xml(?:;base64)?,([A-Za-z0-9+/=]+)/g;
+const METAFILE_HREF = /xlink:href="data:image\/[ew]mf;base64,([A-Za-z0-9+/=]+)"/g;
+
+// Metafile base64 -> Promise of converted SVG base64 (or null). Kept across calls because the
+// UI converts the same file for the preview and again for each download, and converting the
+// pictures dominates the conversion time. Holds only the pictures of the latest call.
+let metafileCache = new Map();
+
+async function postProcess(output) {
+  const text = new TextDecoder().decode(output);
+  const svgs = new Map(); // mxlibrary repeats each SVG in its `data` and `xml` fields
+  const metafiles = new Map(); // stencils often share the same picture
+  const fixed = await replaceAsync(text, SVG_DATA_URI, (match, b64) => {
+    if (!svgs.has(b64)) svgs.set(b64, embedMetafilesAsSvg(b64, metafiles));
+    return svgs.get(b64).then((svgB64) => 'data:image/svg+xml;base64,' + svgB64);
+  });
+  metafileCache = metafiles;
+  // draw.io splits styles on ';', so `image=data:image/svg+xml;base64,...` loses the image.
+  // draw.io expects `image=data:image/svg+xml,...` and re-adds ';base64' itself.
+  return new TextEncoder().encode(
+    fixed.replaceAll('image=data:image/svg+xml;base64,', 'image=data:image/svg+xml,')
+  );
+}
+
+// libvisio embeds Visio's EMF/WMF pictures as-is, and browsers (so draw.io) cannot render
+// metafiles. Converts them to SVG; each stays a separate data URI so their ids cannot clash.
+async function embedMetafilesAsSvg(svgB64, metafiles) {
+  const svg = new TextDecoder().decode(fromBase64(svgB64));
+  if (!svg.includes('data:image/emf') && !svg.includes('data:image/wmf')) return svgB64;
+
+  const fixed = await replaceAsync(svg, METAFILE_HREF, async (match, metaB64) => {
+    if (!metafiles.has(metaB64)) {
+      metafiles.set(metaB64, metafileCache.get(metaB64) ?? metafileToSvgBase64(metaB64));
+    }
+    const metaSvgB64 = await metafiles.get(metaB64);
+    if (!metaSvgB64) return match;
+    // Visio stretches pictures to fill their frame.
+    return `preserveAspectRatio="none" xlink:href="data:image/svg+xml;base64,${metaSvgB64}"`;
+  });
+  return toBase64(new TextEncoder().encode(fixed));
+}
+
+// emf-converter unrolls EMF+ tiled gradients into thousands of <stop>s (up to ~90% of the
+// SVG); a stencil file of these would outgrow the maximum JS string length. Such stripes are
+// finer than a stencil is ever displayed, so fill them with their average colour instead.
+const MAX_GRADIENT_STOPS = 256;
+const GRADIENT = /<(linearGradient|radialGradient)( [^>]*)>(.*?)<\/\1>/g;
+const STOP_COLOR = /stop-color="#([0-9a-f]{6})"/g;
+
+async function metafileToSvgBase64(metaB64) {
+  let svg = null;
+  try {
+    // Caps the viewBox; without it wide pictures are clamped to 8192px, distorting the aspect ratio.
+    svg = await convertMetafileToSvg(fromBase64(metaB64).buffer, { maxWidth: 4096, maxHeight: 4096 });
+  } catch {
+    // A malformed picture should not fail the whole stencil file; keep the original.
+  }
+  if (!svg) return null;
+  svg = svg.replace(GRADIENT, (gradient, tag, attrs, stops) => {
+    const colors = Array.from(stops.matchAll(STOP_COLOR), (m) => parseInt(m[1], 16));
+    if (colors.length <= MAX_GRADIENT_STOPS) return gradient;
+    const average = [16, 8, 0]
+      .map((shift) => Math.round(colors.reduce((sum, c) => sum + ((c >> shift) & 0xff), 0) / colors.length))
+      .map((channel) => channel.toString(16).padStart(2, '0'))
+      .join('');
+    return `<${tag}${attrs}><stop offset="0" stop-color="#${average}"/></${tag}>`;
+  });
+  return toBase64(new TextEncoder().encode(svg));
+}
+
+async function replaceAsync(text, regex, replacer) {
+  const parts = [];
+  let last = 0;
+  for (const match of text.matchAll(regex)) {
+    parts.push(text.slice(last, match.index), await replacer(...match));
+    last = match.index + match[0].length;
+  }
+  parts.push(text.slice(last));
+  return parts.join('');
+}
+
+function fromBase64(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
 }

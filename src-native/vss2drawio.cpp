@@ -204,10 +204,9 @@ std::string generateDrawioXml(const std::vector<StencilItem> &items, int numCols
 
         std::string base64Svg = base64_encode(item.svg);
         std::string escapedName = xmlEscape(item.name.empty() ? ("Shape " + std::to_string(i + 1)) : item.name);
-        std::string dataUri = "data:image/svg+xml;base64," + base64Svg;
 
-        // Standard Draw.io format: image=data:image/svg+xml;base64,<base64>
-        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=" + dataUri + ";";
+        // draw.io splits styles on ';', so the image URI omits ';base64' (draw.io re-adds it when rendering)
+        std::string style = "shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml," + base64Svg + ";";
 
         oss << "        <mxCell id=\"shape-" << i + 2 << "\" value=\"" << escapedName << "\" style=\"" << style << "\" vertex=\"1\" parent=\"1\">\n";
         oss << "          <mxGeometry x=\"" << std::fixed << std::setprecision(2) << posX << "\" y=\"" << posY << "\" width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\" />\n";
@@ -241,8 +240,8 @@ std::string generateMxLibraryXml(const std::vector<StencilItem> &items, double s
 
         std::ostringstream xmlStream;
         xmlStream << "<mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/><mxCell id=\"2\" value=\""
-                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image="
-                  << dataUri << ";\" vertex=\"1\" parent=\"1\"><mxGeometry width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\"/></mxCell></root></mxGraphModel>";
+                  << xmlEscape(title) << "\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,"
+                  << base64Svg << ";\" vertex=\"1\" parent=\"1\"><mxGeometry width=\"" << w << "\" height=\"" << h << "\" as=\"geometry\"/></mxCell></root></mxGraphModel>";
 
         jsonStream << "{\"title\":\"" << jsonEscape(title) << "\""
                    << ",\"w\":" << w

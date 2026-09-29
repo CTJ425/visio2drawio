@@ -54,6 +54,20 @@ describe('Converter Unit Tests (WASM engine)', () => {
     expect(result.items[0].svgBase64).toContain('data:image/svg+xml;base64,');
   });
 
+  it('should replace embedded EMF/WMF images with SVG, since browsers cannot render metafiles', async () => {
+    const result = JSON.parse(await convertToText(hpePath, { format: 'json' }));
+    const svgs: string[] = result.items.map((item: { svgBase64: string }) =>
+      Buffer.from(item.svgBase64.split(',')[1], 'base64').toString('utf-8')
+    );
+
+    for (const svg of svgs) {
+      expect(svg).not.toMatch(/data:image\/(emf|wmf)/);
+    }
+    // 11 of the 12 HPE stencils embed an EMF picture
+    expect(svgs.filter((svg) => svg.includes('<image ')).length).toBe(11);
+    expect(svgs.every((svg) => !svg.includes('<image ') || svg.includes('xlink:href="data:image/svg+xml;base64,'))).toBe(true);
+  });
+
   it('should reject invalid or unsupported files gracefully', async () => {
     const fakeBytes = new TextEncoder().encode('This is a plain text file, not Visio');
     await expect(convertVisio(fakeBytes, { format: 'json' })).rejects.toThrow(/Unsupported Visio file format/);

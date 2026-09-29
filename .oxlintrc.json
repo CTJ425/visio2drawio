@@ -16,6 +16,7 @@
   },
   "ignorePatterns": [
     "public/wasm/vss2drawio.mjs",
+    "public/wasm/emf-converter.mjs",
     "out/**"
   ]
 }

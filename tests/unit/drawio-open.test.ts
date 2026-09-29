@@ -43,12 +43,13 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
       expect(parseFloat(width)).toBeGreaterThan(0);
       expect(parseFloat(height)).toBeGreaterThan(0);
 
-      // Verify draw.io style string uses image=data:image/svg+xml;base64,
+      // draw.io splits styles on ';', so the image URI must omit ';base64' (draw.io re-adds it)
       expect(style).toContain('shape=image;');
-      expect(style).toContain('image=data:image/svg+xml;base64,');
+      expect(style).toContain('image=data:image/svg+xml,');
+      expect(style).not.toContain(';base64');
 
       // Extract Base64 SVG and decode
-      const b64Match = style.match(/image=data:image\/svg\+xml;base64,([^;]+);/);
+      const b64Match = style.match(/image=data:image\/svg\+xml,([^;]+);/);
       expect(b64Match).not.toBeNull();
       const b64 = b64Match![1];
       const svgText = Buffer.from(b64, 'base64').toString('utf-8');
@@ -101,6 +102,8 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
       // Verify item.xml is a valid mxGraphModel
       expect(item.xml).toContain('<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2"');
       expect(item.xml).toContain('</root></mxGraphModel>');
+      expect(item.xml).toContain('image=data:image/svg+xml,');
+      expect(item.xml).not.toContain(';base64');
     }
   });
 
@@ -123,5 +126,5 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
     expect(rackXml).toContain('<mxfile host="app.diagrams.net"');
     const rackMatches = Array.from(rackXml.matchAll(/<mxCell\s+id="shape-(\d+)"/g));
     expect(rackMatches.length).toBe(281);
-  });
+  }, 120000); // converts ~230 distinct EMF pictures to SVG
 });
