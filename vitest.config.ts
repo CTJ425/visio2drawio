@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     testTimeout: 30000,
-    include: ['tests/unit/**/*.{test,spec}.ts', 'tests/smoke/**/*.{test,spec}.ts'],
+    include: ['tests/unit/**/*.{test,spec}.ts'],
     exclude: ['tests/e2e/**', 'node_modules/**'],
   },
   resolve: {

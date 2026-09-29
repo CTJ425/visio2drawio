@@ -34,3 +34,9 @@ playwright-report/
 
 # Internal tools
 .claude/
+
+# WASM toolchain work dir (scripts/build-wasm.sh)
+.wasm-build/
+
+# Native CLI build output (npm run build:native)
+bin/

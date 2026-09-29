@@ -1,12 +1,14 @@
 import { test, expect } from '@playwright/test';
+import fs from 'node:fs/promises';
 import path from 'node:path';
+import { convertVisio } from '../../public/wasm/converter-core.mjs';
 
 test('Test native Draw.io menu: Open Library and drag shape to canvas', async ({ page }) => {
   test.setTimeout(60000);
 
   const xmlPath = path.resolve('test_demo_hpe.xml');
-  const { execSync } = await import('child_process');
-  execSync(`./bin/vss2drawio orig_data/HPE-ProLiant-RL.vss "${xmlPath}" --format mxlibrary --scale 120`);
+  const vss = await fs.readFile(path.resolve('orig_data/HPE-ProLiant-RL.vss'));
+  await fs.writeFile(xmlPath, await convertVisio(vss, { format: 'mxlibrary', scale: 120 }));
 
   console.log('Navigating to app.diagrams.net...');
   await page.goto('https://app.diagrams.net/?splash=0&offline=1&local=1', { waitUntil: 'domcontentloaded' });

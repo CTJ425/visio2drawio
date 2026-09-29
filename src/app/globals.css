@@ -259,6 +259,46 @@ body {
   }
 }
 
+/* Conversion progress bar */
+.progress-track {
+  width: 100%;
+  height: 10px;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--primary);
+  border-radius: 9999px;
+}
+
+.progress-track-indeterminate .progress-fill {
+  width: 40%;
+  background: linear-gradient(90deg, #4f46e5 0%, #0ea5e9 100%);
+  animation: progress-slide 1.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-track-indeterminate .progress-fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* Screen reader only utility */
 .sr-only {
   position: absolute;

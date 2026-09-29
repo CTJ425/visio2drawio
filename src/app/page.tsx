@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Uploader } from '@/components/Uploader';
 import { FormatSelector, ConvertSettings } from '@/components/FormatSelector';
 import { StencilGallery } from '@/components/StencilGallery';
-import { ProgressBar } from '@/components/ProgressBar';
+import { ProgressBar, ConversionProgress } from '@/components/ProgressBar';
 import { DebugConsole, DebugLogEntry } from '@/components/DebugConsole';
-import { uploadWithProgress, UploadProgress } from '@/lib/uploadHelper';
-import type { StencilItem } from '@/lib/converter';
+import { convertVisioFile, previewVisioFile, type StencilItem } from '@/lib/converter';
 import { Download, Sparkles, AlertCircle, RefreshCw, ExternalLink, Eye, Bug } from 'lucide-react';
 
 export default function Home() {
@@ -15,7 +14,7 @@ export default function Home() {
   const [isProcessingPreview, setIsProcessingPreview] = useState(false);
   const [isLoadingAll, setIsLoadingAll] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const [progress, setProgress] = useState<ConversionProgress | null>(null);
   const [progressStatusText, setProgressStatusText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [stencils, setStencils] = useState<StencilItem[] | null>(null);
@@ -35,18 +34,6 @@ export default function Home() {
     setDebugLogs((prev) => [...prev, entry]);
   }, []);
 
-  // Fetch /api/health on mount to verify backend engine
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => res.json())
-      .then((data) => {
-        addDebugLog('info', '後端轉換引擎狀態檢驗成功', data);
-      })
-      .catch((err) => {
-        addDebugLog('warn', '後端轉換引擎連線警示', err.message);
-      });
-  }, [addDebugLog]);
-
   const [settings, setSettings] = useState<ConvertSettings>({
     format: 'drawio',
     cols: 3,
@@ -64,37 +51,24 @@ export default function Home() {
       });
     }
     setError(null);
+    setProgress({ phase: 'processing' });
+    setProgressStatusText('正在本機抽取向量圖案...');
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('limit', limit.toString());
-
-    const result = await uploadWithProgress('/api/preview', formData, {
-      responseType: 'json',
-      onProgress: (p) => {
-        if (p.phase === 'uploading') {
-          setProgress(p);
-          setProgressStatusText(`正在傳輸檔案至伺服器預覽... (${p.percent}%)`);
-        } else if (p.phase === 'processing') {
-          setProgress(p);
-          setProgressStatusText('上傳完成，伺服器核心正在抽取向量圖案...');
-        }
-      },
-    });
-
-    if (result.ok && result.data?.success) {
-      setStencils(result.data.items);
-      const total = result.data.total || result.data.count || result.data.items.length;
+    try {
+      const result = await previewVisioFile(file, limit);
+      setStencils(result.items);
+      const total = result.total || result.count || result.items.length;
       setTotalStencils(total);
-      addDebugLog('info', `成功解析 ${result.data.items.length} 個向量元件 (總計: ${total})`, result.debugInfo);
-      setProgress(null);
-    } else {
-      const errMsg = result.error || '解析檔案預覽失敗';
-      addDebugLog('warn', '預覽產生失敗', { error: errMsg, debug: result.debugInfo });
+      addDebugLog('info', `成功解析 ${result.items.length} 個向量元件 (總計: ${total})`, {
+        durationMs: result.durationMs,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : '解析檔案預覽失敗';
+      addDebugLog('warn', '預覽產生失敗', { error: errMsg });
       // Non-blocking warning so conversion is still possible
       setError(`預覽提示：${errMsg}（您仍可直接點擊下方按鈕進行轉檔下載）`);
-      setProgress(null);
     }
+    setProgress(null);
 
     setIsProcessingPreview(false);
     setIsLoadingAll(false);
@@ -133,34 +107,25 @@ export default function Home() {
       scale: settings.scale,
     });
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('format', formatToUse);
-    formData.append('cols', settings.cols.toString());
-    formData.append('scale', settings.scale.toString());
+    setProgress({ phase: 'processing' });
+    setProgressStatusText(
+      formatToUse === 'mxlibrary'
+        ? '正在將 Visio 元件封裝為 Draw.io 形狀庫 (.xml)...'
+        : '正在將 Visio 檔案轉換為 Draw.io 圖表檔 (.drawio)...'
+    );
 
-    const result = await uploadWithProgress('/api/convert', formData, {
-      responseType: 'blob',
-      onProgress: (p) => {
-        setProgress(p);
-        if (p.phase === 'uploading') {
-          setProgressStatusText(`正在上傳檔案進行轉檔... (${p.percent}%)`);
-        } else if (p.phase === 'processing') {
-          setProgressStatusText(
-            formatToUse === 'mxlibrary'
-              ? '正在將 Visio 元件封裝為 Draw.io 形狀庫 (.xml)...'
-              : '正在將 Visio 檔案串流轉換為 Draw.io 圖表檔 (.drawio)...'
-          );
-        }
-      },
-    });
-
-    if (result.ok && result.blob) {
+    try {
+      const result = await convertVisioFile(selectedFile, {
+        format: formatToUse,
+        cols: settings.cols,
+        scale: settings.scale,
+      });
+      const blob = new Blob([result.bytes], { type: 'application/xml;charset=utf-8' });
       const baseName = selectedFile.name.replace(/\.[^/.]+$/, '');
       const ext = formatToUse === 'mxlibrary' ? 'xml' : 'drawio';
       const filename = `${baseName}.${ext}`;
 
-      const url = window.URL.createObjectURL(result.blob);
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
@@ -169,15 +134,16 @@ export default function Home() {
       a.remove();
       window.URL.revokeObjectURL(url);
 
-      addDebugLog('info', `轉檔並下載成功：${filename} (${(result.blob.size / 1024).toFixed(1)} KB)`, result.debugInfo);
-      setProgress(null);
-    } else {
-      const errMsg = result.error || '轉換檔案失敗';
+      addDebugLog('info', `轉檔並下載成功：${filename} (${(blob.size / 1024).toFixed(1)} KB)`, {
+        durationMs: result.durationMs,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : '轉換檔案失敗';
       setError(`轉檔失敗：${errMsg}`);
-      addDebugLog('error', '轉檔請求失敗', { error: errMsg, debug: result.debugInfo });
+      addDebugLog('error', '轉檔失敗', { error: errMsg });
       setIsDebugOpen(true); // Automatically open debug console on error
-      setProgress(null);
     }
+    setProgress(null);
 
     setIsDownloading(false);
   };
@@ -196,7 +162,7 @@ export default function Home() {
       {/* Header */}
       <header className="header">
         <div className="badge">
-          <Sparkles size={14} /> Next.js + LibVisio 全端轉換引擎
+          <Sparkles size={14} /> LibVisio WebAssembly・檔案只在瀏覽器內處理
         </div>
         <h1 className="title">
           Visio to <span className="title-gradient">Draw.io</span>

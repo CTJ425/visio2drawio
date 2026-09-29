@@ -1,0 +1,9 @@
+# Cloudflare Pages response headers (https://developers.cloudflare.com/pages/configuration/headers/)
+
+# Rebuilt only by `npm run build:wasm`; filenames are not content-hashed, so let
+# browsers revalidate instead of caching them for a year.
+/wasm/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

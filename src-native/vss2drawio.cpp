@@ -285,6 +285,103 @@ std::string generateJsonOutput(const std::vector<StencilItem> &items, int limit 
     return oss.str();
 }
 
+// Parses a Visio document and renders it in the requested format.
+// Returns 0 on success; 2 = unsupported format, 3 = no shapes found.
+int convertVisioStream(librevenge::RVNGInputStream &input, const std::string &format, int numCols,
+                       double scale, int limit, std::string &result, std::string &error,
+                       size_t &itemCount) {
+    if (!libvisio::VisioDocument::isSupported(&input)) {
+        error = "Unsupported Visio file format";
+        return 2;
+    }
+
+    StencilDelegate delegate;
+    input.seek(0, librevenge::RVNG_SEEK_SET);
+    bool success = libvisio::VisioDocument::parseStencils(&input, &delegate);
+    if (!success || delegate.svgVector.empty()) {
+        input.seek(0, librevenge::RVNG_SEEK_SET);
+        success = libvisio::VisioDocument::parse(&input, &delegate);
+    }
+
+    if (!success || delegate.svgVector.empty()) {
+        error = "Failed to parse Visio document or no shapes found";
+        return 3;
+    }
+
+    std::vector<StencilItem> items;
+    for (size_t i = 0; i < delegate.svgVector.size(); ++i) {
+        StencilItem item;
+        item.name = (i < delegate.names.size()) ? delegate.names[i] : "";
+        item.widthInches = (i < delegate.widths.size()) ? delegate.widths[i] : 1.0;
+        item.heightInches = (i < delegate.heights.size()) ? delegate.heights[i] : 1.0;
+        item.svg = delegate.svgVector[i].cstr();
+        if (!item.svg.empty()) {
+            items.push_back(item);
+        }
+    }
+    itemCount = items.size();
+
+    if (format == "mxlibrary") {
+        result = generateMxLibraryXml(items, scale);
+    } else if (format == "json") {
+        result = generateJsonOutput(items, limit);
+    } else {
+        result = generateDrawioXml(items, numCols, scale);
+    }
+    return 0;
+}
+
+#ifdef __EMSCRIPTEN__
+#include <cstdlib>
+#include <emscripten/emscripten.h>
+#include <unicode/putil.h>
+
+static std::string g_lastError;
+
+// Browser entry point. Returns a malloc'd UTF-8 string (free with v2d_free),
+// or nullptr on failure with the reason available from v2d_last_error().
+extern "C" EMSCRIPTEN_KEEPALIVE
+char *v2d_convert(const unsigned char *data, unsigned size, const char *format, int numCols,
+                  double scale, int limit) {
+    // The trimmed ICU converter data is embedded at /icu (see scripts/build-wasm.sh).
+    static bool icuReady = false;
+    if (!icuReady) {
+        u_setDataDirectory("/icu");
+        icuReady = true;
+    }
+
+    g_lastError.clear();
+    std::string result;
+    size_t itemCount = 0;
+    try {
+        librevenge::RVNGStringStream input(data, size);
+        int code = convertVisioStream(input, format ? format : "drawio", std::max(1, numCols),
+                                      std::max(10.0, scale), std::max(0, limit), result, g_lastError,
+                                      itemCount);
+        if (code != 0) return nullptr;
+    } catch (const std::exception &e) {
+        g_lastError = std::string("Conversion failed: ") + e.what();
+        return nullptr;
+    } catch (...) {
+        g_lastError = "Conversion failed: unexpected error while parsing the Visio file";
+        return nullptr;
+    }
+
+    char *out = static_cast<char *>(std::malloc(result.size() + 1));
+    if (!out) {
+        g_lastError = "Out of memory";
+        return nullptr;
+    }
+    std::memcpy(out, result.c_str(), result.size() + 1);
+    return out;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+const char *v2d_last_error() { return g_lastError.c_str(); }
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void v2d_free(char *ptr) { std::free(ptr); }
+#else
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         std::cout << "vss2drawio - Visio Stencil (.vss) to draw.io converter\n\n";
@@ -340,42 +437,13 @@ int main(int argc, char *argv[]) {
     }
 
     librevenge::RVNGFileStream input(inputFile.c_str());
-    if (!libvisio::VisioDocument::isSupported(&input)) {
-        std::cerr << "Error: Unsupported Visio file format: " << inputFile << "\n";
-        return 2;
-    }
-
-    StencilDelegate delegate;
-    bool success = libvisio::VisioDocument::parseStencils(&input, &delegate);
-    if (!success || delegate.svgVector.empty()) {
-        input.seek(0, librevenge::RVNG_SEEK_SET);
-        success = libvisio::VisioDocument::parse(&input, &delegate);
-    }
-
-    if (!success || delegate.svgVector.empty()) {
-        std::cerr << "Error: Failed to parse Visio document or no shapes found in: " << inputFile << "\n";
-        return 3;
-    }
-
-    std::vector<StencilItem> items;
-    for (size_t i = 0; i < delegate.svgVector.size(); ++i) {
-        StencilItem item;
-        item.name = (i < delegate.names.size()) ? delegate.names[i] : "";
-        item.widthInches = (i < delegate.widths.size()) ? delegate.widths[i] : 1.0;
-        item.heightInches = (i < delegate.heights.size()) ? delegate.heights[i] : 1.0;
-        item.svg = delegate.svgVector[i].cstr();
-        if (!item.svg.empty()) {
-            items.push_back(item);
-        }
-    }
-
     std::string result;
-    if (format == "mxlibrary") {
-        result = generateMxLibraryXml(items, scale);
-    } else if (format == "json") {
-        result = generateJsonOutput(items, limit);
-    } else {
-        result = generateDrawioXml(items, numCols, scale);
+    std::string error;
+    size_t itemCount = 0;
+    int code = convertVisioStream(input, format, numCols, scale, limit, result, error, itemCount);
+    if (code != 0) {
+        std::cerr << "Error: " << error << ": " << inputFile << "\n";
+        return code;
     }
 
     if (!outputFile.empty()) {
@@ -386,10 +454,11 @@ int main(int argc, char *argv[]) {
         }
         ofs << result;
         ofs.close();
-        std::cout << "Successfully converted " << items.size() << " stencils to " << outputFile << " (" << format << ")\n";
+        std::cout << "Successfully converted " << itemCount << " stencils to " << outputFile << " (" << format << ")\n";
     } else {
         std::cout << result;
     }
 
     return 0;
 }
+#endif

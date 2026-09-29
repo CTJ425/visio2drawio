@@ -1,24 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { convertVisioFileStream } from '@/lib/converter';
+import { convertVisio } from '../../public/wasm/converter-core.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-async function streamToString(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) chunks.push(value);
-  }
-  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-  const full = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const c of chunks) {
-    full.set(c, offset);
-    offset += c.length;
-  }
-  return new TextDecoder('utf-8').decode(full);
+async function convertToText(bytes: Uint8Array, options: Parameters<typeof convertVisio>[1]) {
+  return new TextDecoder('utf-8').decode(await convertVisio(bytes, options));
 }
 
 describe('Draw.io File & Library Opening Compatibility Verification', () => {
@@ -28,13 +14,11 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
 
   it('verifies HPE .drawio XML structure conforms exactly to draw.io (diagrams.net) schema', async () => {
     const buf = await fs.readFile(hpePath);
-    const { stream, cleanup } = await convertVisioFileStream(buf, 'HPE-ProLiant-RL.vss', {
+    const xml = await convertToText(buf, {
       format: 'drawio',
       cols: 3,
       scale: 120,
     });
-    const xml = await streamToString(stream);
-    await cleanup();
 
     // 1. XML Header and root tags
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
@@ -78,11 +62,9 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
 
   it('verifies HPE .xml mxlibrary conforms to draw.io custom shape library format', async () => {
     const buf = await fs.readFile(hpePath);
-    const { stream, cleanup } = await convertVisioFileStream(buf, 'HPE-ProLiant-RL.vss', {
+    const xml = await convertToText(buf, {
       format: 'mxlibrary',
     });
-    const xml = await streamToString(stream);
-    await cleanup();
 
     expect(xml.startsWith('<mxlibrary>')).toBe(true);
     expect(xml.trimEnd().endsWith('</mxlibrary>')).toBe(true);
@@ -124,11 +106,9 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
 
   it('verifies Dell XR and 55MB RackServers conversion integrity and draw.io openable XML', async () => {
     const xrBuf = await fs.readFile(xrPath);
-    const { stream: xrStream, cleanup: xrCleanup } = await convertVisioFileStream(xrBuf, 'Dell-PowerEdge-XR.vss', {
+    const xrXml = await convertToText(xrBuf, {
       format: 'drawio',
     });
-    const xrXml = await streamToString(xrStream);
-    await xrCleanup();
 
     expect(xrXml).toContain('<mxfile host="app.diagrams.net"');
     const xrMatches = Array.from(xrXml.matchAll(/<mxCell\s+id="shape-(\d+)"/g));
@@ -136,11 +116,9 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
 
     // Large 55MB file
     const rackBuf = await fs.readFile(rackServersPath);
-    const { stream: rackStream, cleanup: rackCleanup } = await convertVisioFileStream(rackBuf, 'Dell-PowerEdge-RackServers.vss', {
+    const rackXml = await convertToText(rackBuf, {
       format: 'drawio',
     });
-    const rackXml = await streamToString(rackStream);
-    await rackCleanup();
 
     expect(rackXml).toContain('<mxfile host="app.diagrams.net"');
     const rackMatches = Array.from(rackXml.matchAll(/<mxCell\s+id="shape-(\d+)"/g));

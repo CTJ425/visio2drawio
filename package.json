@@ -6,12 +6,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "preview": "serve out -l 3000",
     "lint": "oxlint",
     "build:native": "mkdir -p bin && g++ -O3 src-native/vss2drawio.cpp -o bin/vss2drawio $(pkg-config --cflags --libs libvisio-0.1 librevenge-0.0 librevenge-stream-0.0)",
     "test": "vitest run && playwright test",
     "test:unit": "vitest run tests/unit",
-    "test:smoke": "vitest run tests/smoke",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -26,6 +26,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "oxlint": "^1.75.0",
+    "serve": "^14.2.6",
     "typescript": "~6.0.2",
     "vitest": "^4.1.11"
   }
