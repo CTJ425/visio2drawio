@@ -60,11 +60,11 @@ export function FormatSelector({ settings, onChange, disabled }: FormatSelectorP
               color: 'var(--primary)',
               fontWeight: 600,
             }}>
-              整頁排版
+              逐頁還原
             </span>
           </div>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
-            將所有向量形狀整齊排版在單一畫布上。
+            .vsdx 圖表會逐頁還原：圖形可個別編輯，連線仍接在原本的圖形上。.vss、.vssx 形狀庫與舊版 .vsd 圖表則以形狀庫方式排列在單一畫布。
           </p>
           <div style={{
             marginTop: '0.65rem',

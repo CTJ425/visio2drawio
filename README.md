@@ -18,7 +18,7 @@
    - 舊版二進位：**`.vss`** (圖形庫/Stencil)、**`.vsd`** (繪圖圖表)
    - 現代 XML 封裝：**`.vssx`** (圖形庫)、**`.vsdx`** (繪圖圖表)
 2. **多種輸出格式**：
-   - **Draw.io 圖表檔 (`.drawio`)**：將所有形狀按網格排版在畫布上，下載後直接拖入 Draw.io 編輯。
+   - **Draw.io 圖表檔 (`.drawio`)**：`.vsdx` 圖表會逐頁還原（見下方第 5 點）；形狀庫（`.vss`、`.vssx`）與舊版 `.vsd` 圖表則把所有形狀按網格排版在單一畫布上。下載後直接拖入 Draw.io 編輯。
    - **Draw.io 自訂形狀庫 (`.xml`)**：可直接匯入 Draw.io 側邊欄（`檔案 -> 開啟形狀庫 -> 裝置`），常駐使用。
    - **向量 SVG 圖案預覽 (Stencil Gallery)**：即時展示向量縮圖、搜尋元件、個別下載 SVG。
 3. **瀏覽器端 WebAssembly 引擎**：
@@ -26,7 +26,11 @@
    - 轉換在 Web Worker 中執行，不會卡住頁面；已實測 55 MB、281 個形狀的圖形庫。
    - ICU 只打包 libvisio 用到的 Windows code page（1250–1258、874、932、936、949、950），WASM 約 1.7 MB。
 4. **保留 Visio 連接點**：形狀的連接點 (connection points) 會轉成 Draw.io 的 `points` 樣式，連線會接在與 Visio 相同的位置（例如網卡的每個埠）；沒有連接點的形狀維持 Draw.io 預設。
-5. **零後端**：Next.js `output: 'export'` 靜態輸出，沒有 API、沒有伺服器成本，也沒有上傳大小限制。
+5. **`.vsdx` 圖表逐頁還原成可編輯的 Draw.io 頁面**：每個 Visio 頁面對應一個 Draw.io 頁面，每個圖形是一個可編輯的 cell，連接器是接在原本圖形上的連線（保留折點、顏色、虛線與箭頭）。
+   - 伺服器、交換器等 master 圖形沿用 libvisio 畫好的向量圖，依實例自己的位置、縮放、旋轉與翻轉放置。
+   - 矩形與文字方塊轉成原生 Draw.io 圖形（填色、框線、文字樣式都保留）；其他自訂圖形轉成 SVG 圖片。
+   - 舊版 `.vsd`（二進位）沒有可讀的頁面 XML，仍走形狀庫排版。
+6. **零後端**：Next.js `output: 'export'` 靜態輸出，沒有 API、沒有伺服器成本，也沒有上傳大小限制。
 
 ---
 
@@ -38,9 +42,12 @@
  ├─ src/lib/converter.ts             Worker client（型別、請求配對）
  └─ Web Worker
      └─ public/wasm/converter.worker.mjs
-         └─ public/wasm/converter-core.mjs   JS ⇄ WASM 資料搬移（Worker 與單元測試共用）
-             └─ public/wasm/vss2drawio.{mjs,wasm}  由 src-native/vss2drawio.cpp 編譯
+         └─ public/wasm/converter-core.mjs   轉換入口與 JS ⇄ WASM 資料搬移（Worker 與單元測試共用）
+             ├─ public/wasm/vss2drawio.{mjs,wasm}  由 src-native/vss2drawio.cpp 編譯：形狀庫、master 圖形的向量圖
+             └─ public/wasm/vsdx-diagram.mjs       .vsdx 頁面 → Draw.io 頁面（vsdx-zip.mjs 讀封裝、vsdx-xml.mjs 解析 XML）
 ```
+
+`.vsdx` 圖表走第二條路：libvisio 只會回報「要畫什麼」，沒有圖形、群組與連接器的結構，所以頁面結構（`visio/pages/page*.xml` 的 Shape 與 Connect）由 `vsdx-diagram.mjs` 直接從封裝讀取，只有 master 的圖案向 libvisio 要。純 JS，不需要重新編譯 WASM。其他檔案（`.vss`、`.vssx`、`.vsd`，或沒有圖面頁的 `.vsdx`）維持由 libvisio 排成網格；`.vsdx` 頁面解析失敗時也會退回這個輸出，並在主控台留下警告。
 
 `public/wasm/vss2drawio.mjs` 與 `vss2drawio.wasm` 是**預先建置並提交進 git 的產物**。一般開發與 Cloudflare Pages 建置都不需要 Emscripten；只有修改 `src-native/vss2drawio.cpp` 或升級 libvisio 時才要重建（見下方）。
 
@@ -162,7 +169,10 @@ visio2drawio/
 │   └── wasm/                    # 瀏覽器端轉換引擎
 │       ├── vss2drawio.mjs       # Emscripten 產生的載入器（預先建置）
 │       ├── vss2drawio.wasm      # libvisio WebAssembly（預先建置）
-│       ├── converter-core.mjs   # JS ⇄ WASM 資料搬移、EMF 轉 SVG
+│       ├── converter-core.mjs   # 轉換入口、JS ⇄ WASM 資料搬移、EMF 轉 SVG
+│       ├── vsdx-diagram.mjs     # .vsdx 頁面 → 可編輯的 Draw.io 頁面
+│       ├── vsdx-xml.mjs         # 小型 XML 解析器（Worker 沒有 DOMParser）
+│       ├── vsdx-zip.mjs         # .vsdx 封裝（ZIP）讀取
 │       ├── emf-converter.mjs    # emf-converter 套件（npm run vendor:emf 複製）
 │       └── converter.worker.mjs # Web Worker 入口
 ├── samples/                     # 範例 Visio 檔案 (.vss)

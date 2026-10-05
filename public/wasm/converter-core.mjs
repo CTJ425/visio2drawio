@@ -4,6 +4,8 @@
 import createVss2drawio from './vss2drawio.mjs';
 // Vendored from the emf-converter npm package (npm run vendor:emf).
 import { convertMetafileToSvg } from './emf-converter.mjs';
+import { readZip, looksLikeZip } from './vsdx-zip.mjs';
+import { convertVsdxPages } from './vsdx-diagram.mjs';
 
 let modulePromise = null;
 
@@ -29,6 +31,53 @@ export function resetConverter() {
  * @returns {Promise<Uint8Array>} UTF-8 encoded output document
  */
 export async function convertVisio(input, options = {}) {
+  if ((options.format || 'drawio') === 'drawio') {
+    const diagram = await convertDrawingPages(input, options);
+    if (diagram) return diagram;
+  }
+  return convertWithLibvisio(input, options);
+}
+
+// A .vsdx drawing becomes one draw.io page per Visio page, with editable shapes and connectors.
+// libvisio cannot do that (it only reports what to draw), so the pages are read from the package
+// XML and only the masters' pictures come from libvisio. Returns null for anything else
+// (binary .vsd/.vss, or a stencil .vssx with no drawing pages), which libvisio lays out as a grid.
+async function convertDrawingPages(input, options) {
+  if (!looksLikeZip(input)) return null;
+  const scale = Number.isFinite(options.scale) && options.scale > 0 ? options.scale : 120;
+
+  let result;
+  try {
+    const zip = await readZip(input);
+    result = await convertVsdxPages(zip, {
+      scale,
+      loadMasterSvgs: () => loadMasterSvgs(input),
+      metafileToSvg: metafileBytesToSvg,
+    });
+  } catch (err) {
+    // A package this reader cannot follow still converts as a stencil grid rather than failing.
+    console.warn('vsdx page conversion failed, falling back to the stencil layout:', err);
+    return null;
+  }
+  if (!result) return null;
+  for (const warning of result.warnings) console.warn(warning);
+  return new TextEncoder().encode(result.xml);
+}
+
+// Master name -> SVG data URI, as libvisio renders each master of the package.
+async function loadMasterSvgs(input) {
+  const stencils = JSON.parse(new TextDecoder().decode(await convertWithLibvisio(input, { format: 'json', limit: 0 })));
+  const svgs = new Map();
+  for (const item of stencils.items ?? []) {
+    if (!svgs.has(item.title)) {
+      // draw.io splits styles on ';', so the URI omits ';base64' (draw.io re-adds it when rendering).
+      svgs.set(item.title, item.svgBase64.replace('data:image/svg+xml;base64,', 'data:image/svg+xml,'));
+    }
+  }
+  return svgs;
+}
+
+async function convertWithLibvisio(input, options = {}) {
   const Module = await loadConverter();
   const format = options.format || 'drawio';
   const cols = Number.isFinite(options.cols) && options.cols > 0 ? options.cols : 3;
@@ -109,15 +158,20 @@ async function embedMetafilesAsSvg(svgB64, metafiles) {
 }
 
 async function metafileToSvgBase64(metaB64) {
-  let svg = null;
+  const svg = await metafileBytesToSvg(fromBase64(metaB64));
+  return svg ? toBase64(new TextEncoder().encode(svg)) : null;
+}
+
+async function metafileBytesToSvg(bytes) {
   try {
+    // A view into a larger buffer (e.g. an entry of the .vsdx) must be copied: only .buffer is passed on.
+    const own = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
     // Caps the viewBox; without it wide pictures are clamped to 8192px, distorting the aspect ratio.
-    svg = await convertMetafileToSvg(dropDualEmfPlus(fromBase64(metaB64)).buffer, { maxWidth: 4096, maxHeight: 4096 });
+    return await convertMetafileToSvg(dropDualEmfPlus(own).buffer, { maxWidth: 4096, maxHeight: 4096 });
   } catch {
-    // A malformed picture should not fail the whole stencil file; keep the original.
+    // A malformed picture should not fail the whole file; keep the original.
+    return null;
   }
-  if (!svg) return null;
-  return toBase64(new TextEncoder().encode(svg));
 }
 
 // emf-converter leaves out most of what the EMF+ records of Visio's pictures draw (a server
