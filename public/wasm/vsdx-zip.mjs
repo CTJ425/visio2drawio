@@ -1,3 +1,4 @@
+// @ts-check
 // Minimal ZIP reader for .vsdx packages. It relies on the platform's DecompressionStream, so it
 // needs no dependency in the Web Worker or in Node. Shared by the worker and the unit tests.
 const EOCD_SIGNATURE = 0x06054b50;
@@ -22,6 +23,7 @@ export async function readZip(bytes) {
   const entryCount = view.getUint16(eocd + 10, true);
   let cursor = view.getUint32(eocd + 16, true);
   const decoder = new TextDecoder();
+  /** @type {Map<string, { method: number, compressedSize: number, localOffset: number }>} */
   const entries = new Map();
   for (let n = 0; n < entryCount; n++) {
     if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== CENTRAL_SIGNATURE) {
@@ -50,13 +52,16 @@ export async function readZip(bytes) {
       const raw = bytes.subarray(start, start + entry.compressedSize);
       if (entry.method === 0) return raw;
       if (entry.method !== 8) throw new Error(`Unsupported ZIP compression method ${entry.method}`);
-      const inflated = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      const inflated = new Blob([/** @type {Uint8Array<ArrayBuffer>} */ (raw)]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
       return new Uint8Array(await new Response(inflated).arrayBuffer());
     },
   };
 }
 
-/** True when the bytes start like a ZIP archive, i.e. a .vsdx/.vssx rather than a binary .vsd/.vss. */
+/**
+ * True when the bytes start like a ZIP archive, i.e. a .vsdx/.vssx rather than a binary .vsd/.vss.
+ * @param {Uint8Array} bytes
+ */
 export function looksLikeZip(bytes) {
   return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
 }

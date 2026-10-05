@@ -47,7 +47,7 @@
              └─ public/wasm/vsdx-diagram.mjs       .vsdx 頁面 → Draw.io 頁面（vsdx-zip.mjs 讀封裝、vsdx-xml.mjs 解析 XML）
 ```
 
-`.vsdx` 圖表走第二條路：libvisio 只會回報「要畫什麼」，沒有圖形、群組與連接器的結構，所以頁面結構（`visio/pages/page*.xml` 的 Shape 與 Connect）由 `vsdx-diagram.mjs` 直接從封裝讀取，只有 master 的圖案向 libvisio 要。純 JS，不需要重新編譯 WASM。其他檔案（`.vss`、`.vssx`、`.vsd`，或沒有圖面頁的 `.vsdx`）維持由 libvisio 排成網格；`.vsdx` 頁面解析失敗時也會退回這個輸出，並在主控台留下警告。
+`.vsdx` 圖表走第二條路：libvisio 只會回報「要畫什麼」，沒有圖形、群組與連接器的結構，所以頁面結構（`visio/pages/page*.xml` 的 Shape 與 Connect）由 `vsdx-diagram.mjs` 直接從封裝讀取，只有 master 的圖案向 libvisio 要。純 JS，不需要重新編譯 WASM；`vsdx-*.mjs` 都有 `// @ts-check` 與 JSDoc 型別，`next build` 會一併做型別檢查。其他檔案（`.vss`、`.vssx`、`.vsd`，或沒有圖面頁的 `.vsdx`）維持由 libvisio 排成網格；`.vsdx` 頁面解析失敗時也會退回這個輸出，並在主控台留下警告。
 
 `public/wasm/vss2drawio.mjs` 與 `vss2drawio.wasm` 是**預先建置並提交進 git 的產物**。一般開發與 Cloudflare Pages 建置都不需要 Emscripten；只有修改 `src-native/vss2drawio.cpp` 或升級 libvisio 時才要重建（見下方）。
 
@@ -170,7 +170,13 @@ visio2drawio/
 │       ├── vss2drawio.mjs       # Emscripten 產生的載入器（預先建置）
 │       ├── vss2drawio.wasm      # libvisio WebAssembly（預先建置）
 │       ├── converter-core.mjs   # 轉換入口、JS ⇄ WASM 資料搬移、EMF 轉 SVG
-│       ├── vsdx-diagram.mjs     # .vsdx 頁面 → 可編輯的 Draw.io 頁面
+│       ├── vsdx-diagram.mjs     # .vsdx 頁面 → 可編輯的 Draw.io 頁面（入口）
+│       ├── vsdx-model.mjs       # 封裝讀取、shape 模型、cell 繼承（自身 → master → 樣式表）
+│       ├── vsdx-geometry.mjs    # Geometry 合併、路徑、SVG
+│       ├── vsdx-transform.mjs   # 仿射矩陣、放置與連接點位置
+│       ├── vsdx-text.mjs        # 文字與字元樣式 → HTML 標籤
+│       ├── vsdx-formula.mjs     # ShapeSheet 公式（只支援幾何需要的部分）
+│       ├── vsdx-encode.mjs      # 數字格式、跳脫、base64
 │       ├── vsdx-xml.mjs         # 小型 XML 解析器（Worker 沒有 DOMParser）
 │       ├── vsdx-zip.mjs         # .vsdx 封裝（ZIP）讀取
 │       ├── emf-converter.mjs    # emf-converter 套件（npm run vendor:emf 複製）

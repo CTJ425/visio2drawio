@@ -1,3 +1,4 @@
+// @ts-check
 // Small XML parser for the Visio package parts. A Web Worker has no DOMParser and Node has none
 // either, and the Visio XML is plain (no DTD, namespaces only as a default xmlns), so a tokenizer
 // is enough. Elements are { name, attrs, kids }; kids hold child elements and, only inside
@@ -8,8 +9,10 @@ const TOKEN =
 const ATTRIBUTE = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const ENTITY = /&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g;
 
+/** @type {Record<string, string>} */
 const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
+/** @param {string} text */
 function decodeEntities(text) {
   if (!text.includes('&')) return text;
   return text.replace(ENTITY, (match, body) => {
