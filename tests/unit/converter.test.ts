@@ -63,17 +63,17 @@ describe('Converter Unit Tests (WASM engine)', () => {
     for (const svg of svgs) {
       expect(svg).not.toMatch(/data:image\/(emf|wmf)/);
     }
-    // 11 of the 12 HPE stencils embed an EMF picture
-    expect(svgs.filter((svg) => svg.includes('<image ')).length).toBe(11);
-    expect(svgs.every((svg) => !svg.includes('<image ') || svg.includes('xlink:href="data:image/svg+xml;base64,'))).toBe(true);
+    // 11 of the 12 HPE stencils embed an EMF picture, which is drawn as a nested <svg> rather
+    // than a base64 data URI that the stencil's own base64 would encode a second time.
+    expect(svgs.filter((svg) => (svg.match(/<svg\b/g) || []).length > 1).length).toBe(11);
+    expect(svgs.some((svg) => svg.includes('data:image/svg+xml'))).toBe(false);
   });
 
   it('should draw EMF+ dual pictures from their GDI records, which emf-converter renders completely', async () => {
     const result = JSON.parse(await convertToText(hpePath, { format: 'json' }));
     const front = result.items.find((item: { title: string }) => item.title === 'RL300 Gen11 8SFF Front');
     const svg = Buffer.from(front.svgBase64.split(',')[1], 'base64').toString('utf-8');
-    const picture = svg.match(/xlink:href="data:image\/svg\+xml;base64,([^"]+)"/)![1];
-    const pictureSvg = Buffer.from(picture, 'base64').toString('utf-8');
+    const pictureSvg = svg.match(/<svg x=[\s\S]*?<\/svg>/)![0];
 
     // From EMF+ only the chassis ears come out (177 paths); the GDI records draw the
     // drive bays, vents and ports as well (750 paths).

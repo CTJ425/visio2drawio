@@ -85,7 +85,9 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
       expect(item).toHaveProperty('h');
       expect(item).toHaveProperty('aspect', 'fixed');
       expect(item).toHaveProperty('data');
-      expect(item).toHaveProperty('xml');
+      // draw.io's own form for an image entry: it never reads `xml` when `data` is set.
+      expect(item).not.toHaveProperty('xml');
+      expect(item.style).toMatch(/^labelBackgroundColor=default;(points=\[[^;]*\];)?$/);
 
       expect(typeof item.w).toBe('number');
       expect(typeof item.h).toBe('number');
@@ -98,12 +100,6 @@ describe('Draw.io File & Library Opening Compatibility Verification', () => {
       const decodedSvg = Buffer.from(b64, 'base64').toString('utf-8');
       expect(decodedSvg).toContain('<svg');
       expect(decodedSvg).toContain('</svg>');
-
-      // Verify item.xml is a valid mxGraphModel
-      expect(item.xml).toContain('<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2"');
-      expect(item.xml).toContain('</root></mxGraphModel>');
-      expect(item.xml).toContain('image=data:image/svg+xml,');
-      expect(item.xml).not.toContain(';base64');
     }
   });
 

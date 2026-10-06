@@ -19,11 +19,12 @@
    - 現代 XML 封裝：**`.vssx`** (圖形庫)、**`.vsdx`** (繪圖圖表)
 2. **多種輸出格式**：
    - **Draw.io 圖表檔 (`.drawio`)**：`.vsdx` 圖表會逐頁還原（見下方第 5 點）；形狀庫（`.vss`、`.vssx`）與舊版 `.vsd` 圖表則把所有形狀按網格排版在單一畫布上。下載後直接拖入 Draw.io 編輯。
-   - **Draw.io 自訂形狀庫 (`.xml`)**：可直接匯入 Draw.io 側邊欄（`檔案 -> 開啟形狀庫 -> 裝置`），常駐使用。
+   - **Draw.io 自訂形狀庫 (`.xml`)**：可直接匯入 Draw.io 側邊欄（`檔案 -> 開啟形狀庫 -> 裝置`），常駐使用。每個形狀採用 Draw.io 原生的圖片項目格式（`data` + `style`），圖片只存一份，連接點寫在 `style` 裡。
    - **向量 SVG 圖案預覽 (Stencil Gallery)**：即時展示向量縮圖、搜尋元件、個別下載 SVG。
 3. **瀏覽器端 WebAssembly 引擎**：
    - 底層採用 `libvisio 0.1.11`、`librevenge 0.0.5`、`libxml2`，完整保留原始向量形狀、文字與尺寸比例。
    - 轉換在 Web Worker 中執行，不會卡住頁面；已實測 55 MB、281 個形狀的圖形庫。
+   - Visio 內嵌的 EMF/WMF 圖片轉成 SVG 後直接寫進形狀的 SVG（不再包一層 base64），路徑資料以無損方式縮短（`public/wasm/svg-minify.mjs`），畫面與原本一致；Dell XR 形狀庫的 `.xml` 從 34.7 MB 降到 12.2 MB。
    - ICU 只打包 libvisio 用到的 Windows code page（1250–1258、874、932、936、949、950），WASM 約 1.7 MB。
 4. **保留 Visio 連接點**：形狀的連接點 (connection points) 會轉成 Draw.io 的 `points` 樣式，連線會接在與 Visio 相同的位置（例如網卡的每個埠）；沒有連接點的形狀維持 Draw.io 預設。
 5. **`.vsdx` 圖表逐頁還原成可編輯的 Draw.io 頁面**：每個 Visio 頁面對應一個 Draw.io 頁面，每個圖形是一個可編輯的 cell，連接器是接在原本圖形上的連線（保留折點、顏色、虛線與箭頭）。

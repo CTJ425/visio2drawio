@@ -44,7 +44,9 @@ describe('Visio connection points', () => {
       s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
     const [entry] = JSON.parse(decode(xml.slice('<mxlibrary>'.length, xml.lastIndexOf('</mxlibrary>'))));
 
-    expect(entry.xml).toContain('points=[[0,0.5,0],[1,0.5,0],[0.5,0,0]];');
+    // draw.io appends `style` to the image shape it builds from `data` (and ignores `xml` then).
+    expect(entry.style).toContain('points=[[0,0.5,0],[1,0.5,0],[0.5,0,0]];');
+    expect(entry).not.toHaveProperty('xml');
   });
 
   it('reads connection points from binary .vss stencils', async () => {

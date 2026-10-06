@@ -81,7 +81,8 @@ test.describe('QA Deep Verification Suite', () => {
 
     const firstItem = libraryItems[0];
     expect(firstItem).toHaveProperty('title');
-    expect(firstItem).toHaveProperty('xml');
+    expect(firstItem).toHaveProperty('data');
+    expect(firstItem).toHaveProperty('style');
     expect(firstItem).toHaveProperty('w');
     expect(firstItem).toHaveProperty('h');
     expect(typeof firstItem.w).toBe('number');
