@@ -7,6 +7,7 @@ import { StencilGallery } from '@/components/StencilGallery';
 import { ProgressBar, ConversionProgress } from '@/components/ProgressBar';
 import { DebugConsole, DebugLogEntry } from '@/components/DebugConsole';
 import { convertVisioFile, previewVisioFile, type StencilItem } from '@/lib/converter';
+import { rasterizeLibrary } from '@/lib/rasterize';
 import { Download, Sparkles, AlertCircle, RefreshCw, ExternalLink, Eye, Bug } from 'lucide-react';
 
 export default function Home() {
@@ -38,6 +39,7 @@ export default function Home() {
     format: 'drawio',
     cols: 3,
     scale: 120,
+    libraryImage: 'png',
   });
 
   const loadPreview = async (file: File, limit: number = 60) => {
@@ -120,7 +122,17 @@ export default function Home() {
         cols: settings.cols,
         scale: settings.scale,
       });
-      const blob = new Blob([result.bytes], { type: 'application/xml;charset=utf-8' });
+      let bytes = result.bytes;
+      if (formatToUse === 'mxlibrary' && settings.libraryImage === 'png') {
+        const startedAt = performance.now();
+        bytes = await rasterizeLibrary(bytes, {
+          onProgress: (done, total) => setProgressStatusText(`正在將形狀轉為 PNG 圖片（${done} / ${total}）...`),
+        });
+        addDebugLog('info', `已將形狀庫圖片轉為 PNG：${(result.bytes.length / 1048576).toFixed(1)} MB → ${(bytes.length / 1048576).toFixed(1)} MB`, {
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+      }
+      const blob = new Blob([bytes], { type: 'application/xml;charset=utf-8' });
       const baseName = selectedFile.name.replace(/\.[^/.]+$/, '');
       const ext = formatToUse === 'mxlibrary' ? 'xml' : 'drawio';
       const filename = `${baseName}.${ext}`;

@@ -87,6 +87,40 @@ test.describe('QA Deep Verification Suite', () => {
     expect(firstItem).toHaveProperty('h');
     expect(typeof firstItem.w).toBe('number');
     expect(typeof firstItem.h).toBe('number');
+
+    // By default the library stores PNG pictures, which draw.io draws far faster than the
+    // stencils' SVG, at 4x the shape size and with the shape's aspect ratio.
+    const sizes = await page.evaluate(async (items: { data: string; w: number; h: number }[]) =>
+      Promise.all(items.map(async (item) => {
+        const image = new Image();
+        image.src = item.data;
+        await image.decode();
+        return { type: item.data.slice(0, item.data.indexOf(';')), width: image.naturalWidth, height: image.naturalHeight, w: item.w, h: item.h };
+      })), libraryItems);
+    for (const size of sizes) {
+      expect(size.type).toBe('data:image/png');
+      const scale = Math.min(4, 2048 / Math.max(size.w, size.h));
+      expect(Math.abs(size.width - size.w * scale)).toBeLessThanOrEqual(1);
+      expect(Math.abs(size.height - size.h * scale)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('QA-2b: .xml library keeps vector SVG pictures when chosen', async ({ page }) => {
+    await page.goto('/');
+    await page.setInputFiles('#visio-file-input', HPE_FILE);
+    await expect(page.locator('text=形狀庫預覽 (Stencil Gallery)')).toBeVisible({ timeout: 25000 });
+    await page.getByRole('radio', { name: '向量 SVG' }).check();
+
+    const [xmlDownload] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('button:has-text("下載 .xml 形狀庫")').click(),
+    ]);
+    const xmlContent = await fs.readFile((await xmlDownload.path())!, 'utf8');
+    const decodeXml = (s: string) =>
+      s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const libraryItems = JSON.parse(decodeXml(xmlContent.slice('<mxlibrary>'.length, xmlContent.lastIndexOf('</mxlibrary>'))));
+    expect(libraryItems).toHaveLength(12);
+    for (const item of libraryItems) expect(item.data).toMatch(/^data:image\/svg\+xml;base64,/);
   });
 
   test('QA-3: Native HTML5 Drag and Drop verification for HPE-ProLiant-RL.vss', async ({ page }) => {

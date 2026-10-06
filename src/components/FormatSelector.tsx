@@ -3,11 +3,20 @@
 import React from 'react';
 import { Layers, Library, Settings2 } from 'lucide-react';
 
+export type LibraryImageFormat = 'png' | 'svg';
+
 export interface ConvertSettings {
   format: 'drawio' | 'mxlibrary';
   cols: number;
   scale: number;
+  /** How the .xml library stores each shape's picture. */
+  libraryImage: LibraryImageFormat;
 }
+
+const LIBRARY_IMAGE_OPTIONS: { value: LibraryImageFormat; label: string; hint: string }[] = [
+  { value: 'png', label: '點陣 PNG（推薦）', hint: '匯入與捲動形狀庫都很流暢；以 4 倍解析度保存完整圖案，放大到 400% 仍清晰。' },
+  { value: 'svg', label: '向量 SVG', hint: '可無限放大，但圖案複雜的大型形狀庫在 Draw.io 中匯入與捲動會明顯卡頓。' },
+];
 
 interface FormatSelectorProps {
   settings: ConvertSettings;
@@ -123,6 +132,40 @@ export function FormatSelector({ settings, onChange, disabled }: FormatSelectorP
             📍 <strong>Draw.io 開啟方式</strong>：使用<strong>「檔案 ➔ 開啟形狀庫 (Open Library from) ➔ 裝置」</strong>。
           </div>
         </div>
+      </div>
+
+      {/* Library picture format */}
+      <div
+        role="radiogroup"
+        aria-label=".xml 形狀庫圖片格式"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '0.5rem 1.25rem',
+          padding: '0.75rem 1rem',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          fontSize: '0.8125rem',
+        }}
+      >
+        <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>.xml 形狀庫圖片格式</span>
+        {LIBRARY_IMAGE_OPTIONS.map((option) => (
+          <label key={option.value} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: disabled ? 'not-allowed' : 'pointer' }}>
+            <input
+              type="radio"
+              name="library-image"
+              value={option.value}
+              checked={settings.libraryImage === option.value}
+              disabled={disabled}
+              onChange={() => onChange({ ...settings, libraryImage: option.value })}
+            />
+            {option.label}
+          </label>
+        ))}
+        <span style={{ flexBasis: '100%', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          {LIBRARY_IMAGE_OPTIONS.find((option) => option.value === settings.libraryImage)?.hint}
+        </span>
       </div>
 
       {/* Advanced Settings Toggle */}

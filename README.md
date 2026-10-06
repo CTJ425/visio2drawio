@@ -20,6 +20,7 @@
 2. **多種輸出格式**：
    - **Draw.io 圖表檔 (`.drawio`)**：`.vsdx` 圖表會逐頁還原（見下方第 5 點）；形狀庫（`.vss`、`.vssx`）與舊版 `.vsd` 圖表則把所有形狀按網格排版在單一畫布上。下載後直接拖入 Draw.io 編輯。
    - **Draw.io 自訂形狀庫 (`.xml`)**：可直接匯入 Draw.io 側邊欄（`檔案 -> 開啟形狀庫 -> 裝置`），常駐使用。每個形狀採用 Draw.io 原生的圖片項目格式（`data` + `style`），圖片只存一份，連接點寫在 `style` 裡。
+     - **圖片格式可選**：預設為**點陣 PNG**（以形狀尺寸 4 倍解析度保存完整圖案，最長邊上限 2048 px，Draw.io 放大到 400% 仍清晰），匯入與捲動形狀庫都很流暢；也可選**向量 SVG**，但 Visio 廠商圖形每個有上千條路徑，大型形狀庫在 Draw.io 中會明顯卡頓。實測 Dell RackServers（281 個形狀）：SVG 81.6 MB、匯入時主執行緒卡住約 3–4.5 秒；PNG 16 MB、約 0.6 秒。轉 PNG 在網頁主執行緒進行（`src/lib/rasterize.ts`），因為 Web Worker 無法解碼 SVG。
    - **向量 SVG 圖案預覽 (Stencil Gallery)**：即時展示向量縮圖、搜尋元件、個別下載 SVG。
 3. **瀏覽器端 WebAssembly 引擎**：
    - 底層採用 `libvisio 0.1.11`、`librevenge 0.0.5`、`libxml2`，完整保留原始向量形狀、文字與尺寸比例。
