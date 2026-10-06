@@ -7,6 +7,7 @@ import { convertMetafileToSvg } from './emf-converter.mjs';
 import { readZip, looksLikeZip } from './vsdx-zip.mjs';
 import { convertVsdxPages } from './vsdx-diagram.mjs';
 import { minifySvgPaths } from './svg-minify.mjs';
+import { contentFrame, applyFrame } from './svg-extent.mjs';
 
 let modulePromise = null;
 
@@ -32,15 +33,65 @@ export function resetConverter() {
  * @returns {Promise<Uint8Array>} UTF-8 encoded output document
  */
 export async function convertVisio(input, options = {}) {
-  if ((options.format || 'drawio') === 'drawio') {
+  const format = options.format || 'drawio';
+  if (format === 'drawio') {
     const diagram = await convertDrawingPages(input, options);
     if (diagram) return diagram;
+    return convertToGrid(input, options);
   }
-  if (options.format === 'mxlibrary') return convertToLibrary(input, options);
-  return convertWithLibvisio(input, options);
+  if (format === 'mxlibrary') return convertToLibrary(input, options);
+  const stencils = await loadStencils(input, { limit: options.limit });
+  for (const item of stencils.items) delete item.points;
+  return new TextEncoder().encode(JSON.stringify(stencils, null, 2) + '\n');
 }
 
 const XML_ESCAPES = { '&': '&amp;', '"': '&quot;', "'": '&apos;', '<': '&lt;', '>': '&gt;' };
+const xmlEscape = (text) => String(text).replace(/[&"'<>]/g, (c) => XML_ESCAPES[c]);
+
+function scaleOption(options) {
+  return Number.isFinite(options.scale) && options.scale > 0 ? options.scale : 120;
+}
+
+/**
+ * The stencils of a Visio file as libvisio renders them, each SVG framed to everything it
+ * draws: some masters have a page much smaller than their picture, and libvisio frames the
+ * stencil by that page, which cut the rest off. `points` is each stencil's draw.io
+ * `points=[...];` style ('' for none), relative to the fitted frame.
+ * @returns {Promise<{ total: number, count: number, items: { title: string, widthInches: number, heightInches: number, svgBase64: string, points: string }[] }>}
+ */
+async function loadStencils(input, { limit = 0, withPoints = false } = {}) {
+  const stencils = JSON.parse(new TextDecoder().decode(await runLibvisio(input, { format: 'json', limit })));
+  const points = withPoints ? await connectionPointsByShape(input) : [];
+  const pointsMatch = points.length === stencils.items.length;
+  stencils.items.forEach((item, i) => {
+    const style = pointsMatch ? points[i] : '';
+    const svg = new TextDecoder().decode(fromBase64(item.svgBase64.slice(item.svgBase64.indexOf(',') + 1)));
+    const frame = contentFrame(svg);
+    if (!frame) {
+      item.points = style;
+      return;
+    }
+    item.svgBase64 = 'data:image/svg+xml;base64,' + toBase64(new TextEncoder().encode(applyFrame(svg, frame)));
+    item.widthInches *= frame.width / frame.page.width;
+    item.heightInches *= frame.height / frame.page.height;
+    item.points = reframePoints(style, frame);
+  });
+  // Converts the metafile pictures inside the SVGs, as for every libvisio output.
+  return JSON.parse(new TextDecoder().decode(await postProcess(new TextEncoder().encode(JSON.stringify(stencils)))));
+}
+
+// Connection points are fractions of the page; keeps them on the same spot of the larger frame.
+function reframePoints(style, frame) {
+  const list = /^points=(\[.*\]);$/.exec(style)?.[1];
+  if (!list) return style;
+  const round = (v) => Math.round(v * 10000) / 10000;
+  const moved = JSON.parse(list).map(([x, y, ...rest]) => [
+    round((frame.page.x + x * frame.page.width - frame.x) / frame.width),
+    round((frame.page.y + y * frame.page.height - frame.y) / frame.height),
+    ...rest,
+  ]);
+  return `points=${JSON.stringify(moved)};`;
+}
 
 // A draw.io custom library (File > Open Library). Each entry is in draw.io's own form for an
 // image: draw.io builds the shape from `data` and appends `style` to its
@@ -49,24 +100,68 @@ const XML_ESCAPES = { '&': '&amp;', '"': '&quot;', "'": '&apos;', '<': '&lt;', '
 // never reads when `data` is set (so its connection points were lost); for large stencils
 // that output outgrew the WASM memory and came out cut short.
 async function convertToLibrary(input, options) {
-  const scale = Number.isFinite(options.scale) && options.scale > 0 ? options.scale : 120;
-  const stencils = JSON.parse(new TextDecoder().decode(await convertWithLibvisio(input, { format: 'json', limit: 0 })));
-  const points = await connectionPointsByShape(input);
-  const entries = stencils.items.map((item, i) => ({
+  const scale = scaleOption(options);
+  const stencils = await loadStencils(input, { withPoints: true });
+  const entries = stencils.items.map((item) => ({
     title: item.title,
     w: libraryLength(item.widthInches, scale),
     h: libraryLength(item.heightInches, scale),
     aspect: 'fixed',
     data: item.svgBase64,
-    style: 'labelBackgroundColor=default;' + (points.length === stencils.items.length ? points[i] : ''),
+    style: 'labelBackgroundColor=default;' + item.points,
   }));
-  const json = JSON.stringify(entries).replace(/[&"'<>]/g, (c) => XML_ESCAPES[c]);
-  return new TextEncoder().encode(`<mxlibrary>${json}</mxlibrary>\n`);
+  return new TextEncoder().encode(`<mxlibrary>${xmlEscape(JSON.stringify(entries))}</mxlibrary>\n`);
 }
 
 function libraryLength(inches, scale) {
   const length = Math.round(inches * scale);
   return length > 0 ? length : 100;
+}
+
+// Every stencil on one draw.io page, in `cols` columns (each shape goes to the shortest),
+// as libvisio's own draw.io output lays them out.
+async function convertToGrid(input, options) {
+  const scale = scaleOption(options);
+  const cols = Number.isFinite(options.cols) && options.cols > 0 ? Math.floor(options.cols) : 3;
+  const stencils = await loadStencils(input, { withPoints: true });
+  const colWidth = 360, startX = 40, startY = 40, paddingX = 40, paddingY = 80;
+  const colY = new Array(cols).fill(startY);
+  const cells = stencils.items.map((item, i) => {
+    const col = colY.indexOf(Math.min(...colY));
+    const x = startX + col * (colWidth + paddingX);
+    const y = colY[col];
+    let w = item.widthInches * scale;
+    let h = item.heightInches * scale;
+    if (w <= 0) w = 100;
+    if (h <= 0) h = 100;
+    if (w > colWidth) {
+      h *= colWidth / w;
+      w = colWidth;
+    }
+    colY[col] = y + h + paddingY;
+    // draw.io splits styles on ';', so the image URI omits ';base64' (draw.io re-adds it when rendering).
+    const image = item.svgBase64.replace('data:image/svg+xml;base64,', 'data:image/svg+xml,');
+    const style = `shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;${item.points}image=${image};`;
+    return (
+      `        <mxCell id="shape-${i + 2}" value="${xmlEscape(item.title)}" style="${style}" vertex="1" parent="1">\n` +
+      `          <mxGeometry x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" as="geometry" />\n` +
+      '        </mxCell>\n'
+    );
+  });
+  return new TextEncoder().encode(
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<mxfile host="app.diagrams.net" modified="2026-08-24T00:00:00.000Z" agent="visio2drawio" version="21.1.2" type="device">\n' +
+      '  <diagram id="visio-stencils" name="Visio Stencils">\n' +
+      '    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3600" pageHeight="5000" math="0" shadow="0">\n' +
+      '      <root>\n' +
+      '        <mxCell id="0" />\n' +
+      '        <mxCell id="1" parent="0" />\n' +
+      cells.join('') +
+      '      </root>\n' +
+      '    </mxGraphModel>\n' +
+      '  </diagram>\n' +
+      '</mxfile>\n'
+  );
 }
 
 // The `points=[...];` style of each stencil, in stencil order ('' for none). The JSON output

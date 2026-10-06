@@ -27,12 +27,13 @@
    - 轉換在 Web Worker 中執行，不會卡住頁面；已實測 55 MB、281 個形狀的圖形庫。
    - Visio 內嵌的 EMF/WMF 圖片轉成 SVG 後直接寫進形狀的 SVG（不再包一層 base64），路徑資料以無損方式縮短（`public/wasm/svg-minify.mjs`），畫面與原本一致；Dell XR 形狀庫的 `.xml` 從 34.7 MB 降到 12.2 MB。
    - ICU 只打包 libvisio 用到的 Windows code page（1250–1258、874、932、936、949、950），WASM 約 1.7 MB。
-4. **保留 Visio 連接點**：形狀的連接點 (connection points) 會轉成 Draw.io 的 `points` 樣式，連線會接在與 Visio 相同的位置（例如網卡的每個埠）；沒有連接點的形狀維持 Draw.io 預設。
-5. **`.vsdx` 圖表逐頁還原成可編輯的 Draw.io 頁面**：每個 Visio 頁面對應一個 Draw.io 頁面，每個圖形是一個可編輯的 cell，連接器是接在原本圖形上的連線（保留折點、顏色、虛線與箭頭）。
+4. **形狀完整不裁切**：有些 master 的頁面比它的圖案小很多（例如 Dell EMC 機櫃與磁碟櫃形狀只有 0.1 吋寬或高），libvisio 依頁面大小框住形狀，超出的部分就被切掉。轉換時會依圖形實際範圍（路徑、圖片，不含文字）放大外框，連接點也跟著換算（`public/wasm/svg-extent.mjs`）；預覽、`.drawio` 與 `.xml` 都用同一份結果。
+5. **保留 Visio 連接點**：形狀的連接點 (connection points) 會轉成 Draw.io 的 `points` 樣式，連線會接在與 Visio 相同的位置（例如網卡的每個埠）；沒有連接點的形狀維持 Draw.io 預設。
+6. **`.vsdx` 圖表逐頁還原成可編輯的 Draw.io 頁面**：每個 Visio 頁面對應一個 Draw.io 頁面，每個圖形是一個可編輯的 cell，連接器是接在原本圖形上的連線（保留折點、顏色、虛線與箭頭）。
    - 伺服器、交換器等 master 圖形沿用 libvisio 畫好的向量圖，依實例自己的位置、縮放、旋轉與翻轉放置。
    - 矩形與文字方塊轉成原生 Draw.io 圖形（填色、框線、文字樣式都保留）；其他自訂圖形轉成 SVG 圖片。
    - 舊版 `.vsd`（二進位）沒有可讀的頁面 XML，仍走形狀庫排版。
-6. **零後端**：Next.js `output: 'export'` 靜態輸出，沒有 API、沒有伺服器成本，也沒有上傳大小限制。
+7. **零後端**：Next.js `output: 'export'` 靜態輸出，沒有 API、沒有伺服器成本，也沒有上傳大小限制。
 
 ---
 
